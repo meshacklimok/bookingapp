@@ -1,0 +1,8 @@
+project_id = "bookingapp"
+
+# Provider callbacks cannot send a Supabase JWT; they are verified inside the function instead.
+[functions.mpesa-callback]
+verify_jwt = false
+
+[functions.paystack-webhook]
+verify_jwt = false

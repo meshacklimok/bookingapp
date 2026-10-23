@@ -1,0 +1,30 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.vscode/
+pubspec.lock
+
+# Android / iOS
+android/local.properties
+android/.gradle/
+android/key.properties
+*.jks
+*.keystore
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+
+# Secrets
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.branches/
+supabase/.temp/
