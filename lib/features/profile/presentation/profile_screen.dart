@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/supabase/supabase_providers.dart';
 import '../../org_dashboard/data/org_repository.dart';
+import '../data/profile_repository.dart';
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -12,7 +13,9 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final client = ref.watch(supabaseProvider);
     final user = client.auth.currentUser;
+    final profile = ref.watch(myProfileProvider).valueOrNull;
     final memberships = ref.watch(membershipsProvider).valueOrNull ?? const <OrgMembership>[];
+    final name = profile?.fullName ?? user?.userMetadata?['full_name'] as String?;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
@@ -21,8 +24,8 @@ class ProfileScreen extends ConsumerWidget {
         children: [
           ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person)),
-            title: Text(user?.userMetadata?['full_name'] as String? ?? user?.email ?? 'Guest'),
-            subtitle: user?.email == null ? null : Text(user!.email!),
+            title: Text(name ?? user?.email ?? 'Guest'),
+            subtitle: user?.email == null ? null : Text([user!.email!, if (profile?.phone != null) profile!.phone!].join(' · ')),
           ),
           const Divider(),
           if (user == null)
@@ -30,6 +33,12 @@ class ProfileScreen extends ConsumerWidget {
               leading: const Icon(Icons.login),
               title: const Text('Sign in'),
               onTap: () => context.push('/login'),
+            ),
+          if (user != null)
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit profile'),
+              onTap: () => context.push('/profile/edit'),
             ),
           for (final m in memberships) ...[
             ListTile(

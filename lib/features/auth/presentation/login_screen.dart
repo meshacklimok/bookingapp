@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/config/env.dart';
 import '../../../core/supabase/supabase_providers.dart';
+import '../../../core/utils/validators.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -20,6 +22,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _signUp = false;
   bool _busy = false;
   String? _message;
+  bool _messageIsError = true;
 
   @override
   void dispose() {
@@ -34,6 +37,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() {
       _busy = true;
       _message = null;
+      _messageIsError = true;
     });
     final auth = ref.read(supabaseProvider).auth;
     try {
@@ -42,10 +46,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           email: _email.text.trim(),
           password: _password.text,
           data: {'full_name': _name.text.trim()},
+          emailRedirectTo: Env.authRedirectUrl,
         );
         // With email confirmation enabled there is no session until the link is opened.
         if (res.session == null && mounted) {
-          setState(() => _message = 'Check your email to confirm your account, then sign in.');
+          setState(() {
+            _message = 'Check your email to confirm your account, then sign in.';
+            _messageIsError = false;
+          });
         }
       } else {
         await auth.signInWithPassword(email: _email.text.trim(), password: _password.text);
@@ -54,6 +62,41 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       setState(() => _message = e.message);
     } catch (_) {
       setState(() => _message = 'Something went wrong. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final emailError = validateEmail(_email.text);
+    if (emailError != null) {
+      setState(() {
+        _message = 'Enter your email above first.';
+        _messageIsError = true;
+      });
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await ref.read(supabaseProvider).auth.resetPasswordForEmail(
+            _email.text.trim(),
+            redirectTo: Env.authRedirectUrl,
+          );
+      // Same message whether or not the account exists, so emails can't be probed.
+      setState(() {
+        _message = 'If that email has an account, a reset link is on its way.';
+        _messageIsError = false;
+      });
+    } on AuthException catch (e) {
+      setState(() {
+        _message = e.message;
+        _messageIsError = true;
+      });
+    } catch (_) {
+      setState(() {
+        _message = 'Something went wrong. Please try again.';
+        _messageIsError = true;
+      });
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -83,7 +126,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       controller: _name,
                       decoration: const InputDecoration(labelText: 'Full name'),
                       textCapitalization: TextCapitalization.words,
-                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter your name' : null,
+                      validator: validateRequiredName,
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -91,18 +134,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     controller: _email,
                     decoration: const InputDecoration(labelText: 'Email'),
                     keyboardType: TextInputType.emailAddress,
-                    validator: (v) => (v == null || !v.contains('@')) ? 'Enter a valid email' : null,
+                    autofillHints: const [AutofillHints.email],
+                    validator: validateEmail,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _password,
                     decoration: const InputDecoration(labelText: 'Password'),
                     obscureText: true,
-                    validator: (v) => (v == null || v.length < 6) ? 'At least 6 characters' : null,
+                    validator: validatePassword,
                   ),
+                  if (!_signUp)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _busy ? null : _resetPassword,
+                        child: const Text('Forgot password?'),
+                      ),
+                    ),
                   if (_message != null) ...[
                     const SizedBox(height: 12),
-                    Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    Text(
+                      _message!,
+                      style: TextStyle(
+                        color: _messageIsError
+                            ? Theme.of(context).colorScheme.error
+                            : Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 20),
                   FilledButton(

@@ -8,8 +8,11 @@
    supabase db push                 # runs supabase/migrations/*
    ```
    Enable the `pg_cron` extension first (Dashboard, Database, Extensions) or the last migration fails.
-3. Optional demo data: run `supabase/seed.sql` in the SQL editor.
-4. Edge Function secrets:
+3. Auth redirect: Dashboard, Authentication, URL Configuration, add `com.example.bookingapp://auth-callback`
+   to Redirect URLs. Sign-up confirmation and password reset emails open the app through it.
+   If you change the app id, update it in `lib/core/config/env.dart`, `AndroidManifest.xml` and `Info.plist` too.
+4. Optional demo data: run `supabase/seed.sql` in the SQL editor.
+5. Edge Function secrets:
    ```
    copy supabase\.env.example supabase\.env     # then fill it in
    supabase secrets set --env-file supabase/.env
@@ -17,7 +20,7 @@
    supabase functions deploy mpesa-callback
    supabase functions deploy paystack-webhook
    ```
-5. Point the provider callbacks at your functions:
+6. Point the provider callbacks at your functions:
    - Paystack dashboard, Webhook URL: `https://<ref>.supabase.co/functions/v1/paystack-webhook`
    - M-Pesa: the callback URL is built automatically by `create-payment`.
 
