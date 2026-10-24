@@ -27,13 +27,27 @@ The `reference` column on `payments` is unique. Webhooks and callbacks that arri
 
 ## Commission and earnings
 - On success, resolve the rate (service, then organization, then platform).
-- Store on the booking: `commission_pct`, `commission_amount`, `org_earnings = total - commission`.
+- Store on the booking: `commission_pct`, `commission_cents`, `org_earnings_cents = total_cents - commission_cents`.
+- The dashboard's earnings screen (owners and admins only) reads `org_earnings_summary` and `org_earnings_rows`: gross, commission and net, per booking and in total, for a Nairobi calendar period. A booking counts once paid (commission snapshot set) and while `confirmed`, `completed` or `no_show`; cancelled ones are excluded.
 - Organization earnings accumulate in a ledger. Payouts are manual or scheduled at first (M-Pesa B2C or bank transfer later).
 
-## Refunds
-- Governed by the service's cancellation policy.
-- `process-refund` calls the provider, writes a `refunds` row, voids tickets and adjusts the organization's ledger.
-- Commission on refunded bookings is reversed in full or in part, according to your rule (decide before v1.5).
+## Cancellations and refunds
+- Each service has a policy: full refund until `free_cancel_hours` before the start, `late_refund_pct` percent after that. If the organization cancels, the customer always gets everything back.
+- `cancellation_quote` tells the app what a cancel would refund; `cancel_booking` does it. A booking cannot be cancelled once it started or a ticket was scanned.
+- On cancel: tickets are voided, the booking records `refund_cents`, and `commission_cents` / `org_earnings_cents` shrink pro rata (the platform returns its share of the refund). A pending `refunds` row is created and both sides are notified.
+- The money still goes back by hand for now: a platform admin sends it and marks the refund processed (`resolve_refund`), which sets the payment to `refunded` once it is fully refunded. The `process-refund` Edge Function sends Paystack refunds automatically: the app calls it right after a cancellation (customer, organization or admin), and admins can retry a pending one from the Refunds tab ("Send via Paystack"). It claims the refund (`processing`) so it cannot be sent twice, calls Paystack's refund API, and `paystack-webhook` settles it on `refund.processed` / `refund.failed` through `finish_refund`. A request error puts the refund back to `pending` with `last_error`. M-Pesa refunds stay manual: Daraja's reversal API cannot refund part of a payment.
+
+## Payouts
+- `org_balance`: payable = net earnings of settled bookings (over, or cancelled with money kept) minus payouts; upcoming earnings are shown separately because they can still be refunded.
+- A platform admin sends the money (M-Pesa or bank) and records it with `record_payout`, which refuses more than the payable balance. Organizations read their balance and history; they cannot write payouts.
+
+## Platform admin
+The profile menu shows "Platform admin" for admins: approve or suspend organizations, resolve refunds, record payouts, and set commission (platform, organization or service) with `set_commission` / `clear_commission`.
+
+## Notifications
+- The database writes notifications (booking confirmed, new booking, cancelled, refund sent, payout sent, a reminder 24 hours before a booking). The app only reads them and marks them read; `data.route` is the in-app page opened on tap.
+- `send_booking_reminders` runs every 15 minutes through pg_cron (`..._reminders_cron.sql`) and never sends the same reminder twice.
+- Push delivery is not built: it would read the same rows and the `device_tokens` table from an Edge Function.
 
 ## Tickets and QR
 - On confirmation, create one ticket per seat or person with a random `qr_token`.
