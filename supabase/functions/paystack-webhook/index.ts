@@ -18,6 +18,41 @@ async function validSignature(rawBody: string, signature: string | null): Promis
   return expected === signature;
 }
 
+// refund.processed / refund.failed settle a refund that process-refund left `processing`. Paystack identifies the
+// refund by its own id and by the transaction reference (our payment id), so match on the payment and the amount.
+async function handleRefundEvent(event: { event: string; data?: Record<string, unknown> }) {
+  if (event.event !== 'refund.processed' && event.event !== 'refund.failed') return;
+  const transaction = event.data?.transaction_reference ?? event.data?.transaction;
+  if (typeof transaction !== 'string') return;
+  const amount = Number(event.data?.amount);
+  const providerRef = event.data?.id != null ? String(event.data.id) : null;
+
+  const db = adminClient();
+  const { data: payment } = await db
+    .from('payments')
+    .select('id')
+    .eq('provider', 'paystack')
+    .eq('reference', transaction)
+    .maybeSingle();
+  if (!payment) return;
+
+  const { data: processing } = await db
+    .from('refunds')
+    .select('id, amount_cents, provider_ref')
+    .eq('payment_id', payment.id)
+    .eq('status', 'processing');
+  const match = (processing ?? []).find((r) => providerRef != null && r.provider_ref === providerRef) ??
+    (processing ?? []).find((r) => r.amount_cents === amount);
+  if (!match) return;
+
+  const { error } = await db.rpc('finish_refund', {
+    p_refund_id: match.id,
+    p_status: event.event === 'refund.processed' ? 'processed' : 'failed',
+    p_provider_ref: providerRef,
+  });
+  if (error) throw error;
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
 
@@ -28,6 +63,10 @@ Deno.serve(async (req) => {
 
   try {
     const event = JSON.parse(rawBody);
+    if (typeof event?.event === 'string' && event.event.startsWith('refund.')) {
+      await handleRefundEvent(event);
+      return json({ received: true });
+    }
     const reference: string | undefined = event?.data?.reference;
     if (!reference) return json({ received: true });
 

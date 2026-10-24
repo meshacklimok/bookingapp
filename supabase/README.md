@@ -14,11 +14,12 @@
 4. Optional demo data: run `supabase/seed.sql` in the SQL editor.
 5. Edge Function secrets:
    ```
-   copy supabase\.env.example supabase\.env     # then fill it in
+   cp supabase/.env.example supabase/.env     # then fill it in
    supabase secrets set --env-file supabase/.env
    supabase functions deploy create-payment
    supabase functions deploy mpesa-callback
    supabase functions deploy paystack-webhook
+   supabase functions deploy process-refund
    ```
 6. Point the provider callbacks at your functions:
    - Paystack dashboard, Webhook URL: `https://<ref>.supabase.co/functions/v1/paystack-webhook`
@@ -55,3 +56,11 @@ insert into public.availability_rules (org_id, staff_id, weekday, start_time, en
 ## Notes
 - Money is integer cents. M-Pesa charges whole shillings, so amounts are rounded up to the next shilling for the STK push.
 - Bookings, tickets and payments cannot be written from the app. They change only through the functions in `20260101000003_functions.sql` and the Edge Functions.
+
+## Tests
+`supabase/tests/run.sh` applies the migrations to a scratch Postgres (no Supabase needed, `pg_cron` is skipped) and checks
+double-booking, holds, inventory, payments, commission, check-in and RLS:
+```
+PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres supabase/tests/run.sh
+```
+It drops and recreates a database named `booking_test`, so point it at a throwaway server.
