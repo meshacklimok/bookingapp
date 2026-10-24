@@ -66,11 +66,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         onRetry: () => ref.invalidate(bookingStreamProvider(widget.bookingId)),
         data: (b) {
           if (b == null) return const EmptyState(icon: Icons.search_off, message: 'Booking not found.');
-          if (b.status == 'confirmed') return _Success(onView: () {
-            ref.invalidate(myTicketsProvider);
-            ref.invalidate(myBookingsProvider);
-            context.go('/tickets');
-          });
+          if (b.status == 'confirmed') {
+            return _Success(onView: () {
+              ref.invalidate(myTicketsProvider);
+              ref.invalidate(myBookingsProvider);
+              context.go('/tickets');
+            });
+          }
           if (!b.isUnpaid) {
             return const EmptyState(icon: Icons.info_outline, message: 'This booking is no longer open for payment.');
           }

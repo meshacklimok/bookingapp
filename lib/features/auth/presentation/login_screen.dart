@@ -59,9 +59,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await auth.signInWithPassword(email: _email.text.trim(), password: _password.text);
       }
     } on AuthException catch (e) {
-      setState(() => _message = e.message);
+      if (mounted) setState(() => _message = e.message);
     } catch (_) {
-      setState(() => _message = 'Something went wrong. Please try again.');
+      if (mounted) setState(() => _message = 'Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -82,17 +82,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _email.text.trim(),
             redirectTo: Env.authRedirectUrl,
           );
+      if (!mounted) return;
       // Same message whether or not the account exists, so emails can't be probed.
       setState(() {
         _message = 'If that email has an account, a reset link is on its way.';
         _messageIsError = false;
       });
     } on AuthException catch (e) {
+      if (!mounted) return;
       setState(() {
         _message = e.message;
         _messageIsError = true;
       });
     } catch (_) {
+      if (!mounted) return;
       setState(() {
         _message = 'Something went wrong. Please try again.';
         _messageIsError = true;

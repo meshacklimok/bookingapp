@@ -20,6 +20,8 @@ class Service {
     required this.durationMin,
     required this.location,
     required this.eventStartsAt,
+    this.freeCancelHours = 24,
+    this.lateRefundPct = 0,
   });
 
   final String id;
@@ -33,6 +35,8 @@ class Service {
   final int durationMin;
   final String? location;
   final DateTime? eventStartsAt;
+  final int freeCancelHours;
+  final int lateRefundPct;
 
   factory Service.fromMap(Map<String, dynamic> m) => Service(
         id: m['id'] as String,
@@ -46,6 +50,8 @@ class Service {
         durationMin: m['duration_min'] as int,
         location: m['location'] as String?,
         eventStartsAt: m['event_starts_at'] == null ? null : DateTime.parse(m['event_starts_at'] as String),
+        freeCancelHours: (m['free_cancel_hours'] as num?)?.toInt() ?? 24,
+        lateRefundPct: (m['late_refund_pct'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -72,5 +78,19 @@ class TicketTier {
         priceCents: m['price_cents'] as int,
         quantity: m['quantity'] as int,
         sold: m['sold'] as int,
+      );
+}
+
+class StaffMember {
+  const StaffMember({required this.id, required this.name, required this.avatarUrl});
+
+  final String id;
+  final String name;
+  final String? avatarUrl;
+
+  factory StaffMember.fromMap(Map<String, dynamic> m) => StaffMember(
+        id: m['staff_id'] as String,
+        name: (m['full_name'] as String?)?.trim().isNotEmpty == true ? m['full_name'] as String : 'Staff member',
+        avatarUrl: m['avatar_url'] as String?,
       );
 }

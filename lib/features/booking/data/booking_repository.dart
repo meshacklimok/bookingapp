@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/supabase/supabase_providers.dart';
 import '../../../core/utils/formatters.dart';
 import '../domain/booking.dart';
+import '../domain/cancellation.dart';
 
 class BookingRepository {
   BookingRepository(this._client);
@@ -37,12 +38,25 @@ class BookingRepository {
     return row['id'] as String;
   }
 
-  Future<void> cancel(String bookingId) => _client.rpc('cancel_booking', params: {'p_booking_id': bookingId});
+  /// Cancels, then asks the server to send any refund back through the provider. The cancellation stands even when
+  /// that second step fails: the refund stays pending and a platform admin can retry it.
+  Future<void> cancel(String bookingId, {String? reason}) async {
+    await _client.rpc('cancel_booking', params: {'p_booking_id': bookingId, if (reason != null) 'p_reason': reason});
+    try {
+      await _client.functions.invoke('process-refund', body: {'booking_id': bookingId});
+    } catch (_) {}
+  }
+
+  /// What cancelling now would refund, for the caller's role (customer: policy; organization: everything).
+  Future<CancellationQuote> cancellationQuote(String bookingId) async {
+    final rows = await _client.rpc('cancellation_quote', params: {'p_booking_id': bookingId});
+    return CancellationQuote.fromMap((rows as List).single as Map<String, dynamic>);
+  }
 
   Future<List<Booking>> mine() async {
     final rows = await _client
         .from('bookings')
-        .select('*, services(title)')
+        .select('*, services(title, free_cancel_hours, late_refund_pct), payments(refunds(status))')
         .eq('customer_id', _client.auth.currentUser!.id)
         .order('starts_at', ascending: false);
     return rows.map(Booking.fromMap).toList();

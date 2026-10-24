@@ -1,3 +1,4 @@
+import '../../booking/domain/cancellation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -40,10 +41,12 @@ class ServiceDetailScreen extends ConsumerWidget {
               icon: Icons.payments_outlined,
               text: s.mode == BookingMode.event ? 'From ${formatKes(s.priceCents)}' : formatKes(s.priceCents),
             ),
+            _InfoRow(icon: Icons.event_busy_outlined, text: cancellationPolicyText(s.freeCancelHours, s.lateRefundPct)),
             if (s.description != null && s.description!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(s.description!),
             ],
+            if (s.mode == BookingMode.appointment) _StaffSection(serviceId: s.id),
             const SizedBox(height: 24),
             if (s.mode == BookingMode.resource)
               const Text('Online booking for this service is coming soon.')
@@ -54,6 +57,43 @@ class ServiceDetailScreen extends ConsumerWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _StaffSection extends ConsumerWidget {
+  const _StaffSection({required this.serviceId});
+
+  final String serviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The team list is a nice-to-have, so loading and errors render nothing.
+    final staff = ref.watch(staffProvider(serviceId)).valueOrNull ?? const [];
+    if (staff.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Your specialist', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              for (final m in staff)
+                Chip(
+                  avatar: CircleAvatar(
+                    backgroundImage: m.avatarUrl == null ? null : NetworkImage(m.avatarUrl!),
+                    child: m.avatarUrl == null ? Text(m.name[0].toUpperCase()) : null,
+                  ),
+                  label: Text(m.name),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -175,42 +175,45 @@ class _TierPickerState extends ConsumerState<_TierPicker> {
         for (final t in items) {
           if (t.id == _tierId) chosen = t;
         }
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            for (final t in items)
-              Card(
-                child: RadioListTile<String>(
-                  value: t.id,
-                  groupValue: _tierId,
-                  onChanged: t.remaining <= 0 ? null : (v) => setState(() => _tierId = v),
-                  title: Text(t.name),
-                  subtitle: Text(t.remaining <= 0 ? 'Sold out' : '${t.remaining} left'),
-                  secondary: Text(formatKes(t.priceCents)),
+        return RadioGroup<String>(
+          groupValue: _tierId,
+          onChanged: (v) => setState(() => _tierId = v),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              for (final t in items)
+                Card(
+                  child: RadioListTile<String>(
+                    value: t.id,
+                    enabled: t.remaining > 0,
+                    title: Text(t.name),
+                    subtitle: Text(t.remaining <= 0 ? 'Sold out' : '${t.remaining} left'),
+                    secondary: Text(formatKes(t.priceCents)),
+                  ),
                 ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Quantity'),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: _quantity > 1 ? () => setState(() => _quantity--) : null,
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
+                  Text('$_quantity', style: Theme.of(context).textTheme.titleMedium),
+                  IconButton(
+                    onPressed: _quantity < 10 ? () => setState(() => _quantity++) : null,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
               ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Quantity'),
-                const Spacer(),
-                IconButton(
-                  onPressed: _quantity > 1 ? () => setState(() => _quantity--) : null,
-                  icon: const Icon(Icons.remove_circle_outline),
-                ),
-                Text('$_quantity', style: Theme.of(context).textTheme.titleMedium),
-                IconButton(
-                  onPressed: _quantity < 10 ? () => setState(() => _quantity++) : null,
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            FilledButton(
-              onPressed: (_tierId == null || _busy) ? null : _hold,
-              child: Text(chosen == null ? 'Choose a ticket type' : 'Continue · ${formatKes(chosen.priceCents * _quantity)}'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: (_tierId == null || _busy) ? null : _hold,
+                child: Text(chosen == null ? 'Choose a ticket type' : 'Continue · ${formatKes(chosen.priceCents * _quantity)}'),
+              ),
+            ],
+          ),
         );
       },
     );

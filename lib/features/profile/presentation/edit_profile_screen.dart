@@ -65,7 +65,7 @@ class _EditProfileFormState extends ConsumerState<_EditProfileForm> {
       ref.invalidate(myProfileProvider);
       if (mounted) context.pop();
     } catch (e) {
-      setState(() => _message = friendlyError(e));
+      if (mounted) setState(() => _message = friendlyError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

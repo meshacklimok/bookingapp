@@ -40,9 +40,9 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password updated.')));
       context.go('/');
     } on AuthException catch (e) {
-      setState(() => _message = e.message);
+      if (mounted) setState(() => _message = e.message);
     } catch (_) {
-      setState(() => _message = 'Something went wrong. Please try again.');
+      if (mounted) setState(() => _message = 'Something went wrong. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

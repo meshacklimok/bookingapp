@@ -12,6 +12,8 @@ class AsyncBody<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return value.when(
+      // keep showing the previous data while a dependency change (filter, page size) reloads it
+      skipLoadingOnReload: true,
       data: data,
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (error, _) => Center(

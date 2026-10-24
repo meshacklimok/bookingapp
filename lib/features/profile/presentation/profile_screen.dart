@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/supabase/supabase_providers.dart';
+import '../../notifications/data/notification_repository.dart';
 import '../../org_dashboard/data/org_repository.dart';
+import '../../org_dashboard/domain/organization.dart';
 import '../data/profile_repository.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -15,6 +17,7 @@ class ProfileScreen extends ConsumerWidget {
     final user = client.auth.currentUser;
     final profile = ref.watch(myProfileProvider).valueOrNull;
     final memberships = ref.watch(membershipsProvider).valueOrNull ?? const <OrgMembership>[];
+    final unread = ref.watch(unreadNotificationsProvider);
     final name = profile?.fullName ?? user?.userMetadata?['full_name'] as String?;
 
     return Scaffold(
@@ -36,6 +39,16 @@ class ProfileScreen extends ConsumerWidget {
             ),
           if (user != null)
             ListTile(
+              leading: Badge(
+                isLabelVisible: unread > 0,
+                label: Text('$unread'),
+                child: const Icon(Icons.notifications_outlined),
+              ),
+              title: const Text('Notifications'),
+              onTap: () => context.push('/notifications'),
+            ),
+          if (user != null)
+            ListTile(
               leading: const Icon(Icons.edit_outlined),
               title: const Text('Edit profile'),
               onTap: () => context.push('/profile/edit'),
@@ -44,10 +57,23 @@ class ProfileScreen extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.storefront),
               title: Text(m.orgName ?? 'Organization'),
-              subtitle: Text('Dashboard · ${m.role}'),
+              subtitle: Text('Dashboard · ${m.role}${m.status == OrgStatus.approved ? '' : ' · ${m.status.label.toLowerCase()}'}'),
               onTap: () => context.push('/org/${m.orgId}'),
             ),
           ],
+          if (user != null)
+            ListTile(
+              leading: const Icon(Icons.add_business_outlined),
+              title: Text(memberships.isEmpty ? 'Register your organization' : 'Register another organization'),
+              onTap: () => context.push('/org/register'),
+            ),
+          if (profile?.isPlatformAdmin == true)
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings_outlined),
+              title: const Text('Platform admin'),
+              subtitle: const Text('Approvals, refunds, payouts, commission'),
+              onTap: () => context.push('/admin'),
+            ),
           if (memberships.isNotEmpty)
             ListTile(
               leading: const Icon(Icons.qr_code_scanner),

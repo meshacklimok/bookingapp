@@ -21,3 +21,10 @@ String? validateOptionalPhone(String? v) {
   if (v == null || v.trim().isEmpty) return null;
   return normalizeKenyanPhone(v) == null ? 'Enter a valid number, e.g. 0712345678' : null;
 }
+
+String? validateOrgName(String? v) {
+  final value = v?.trim() ?? '';
+  if (value.length < 2) return 'Enter your organization\'s name';
+  if (value.length > 80) return 'Keep the name under 80 characters';
+  return null;
+}

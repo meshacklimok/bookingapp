@@ -31,3 +31,13 @@ String formatDateTime(DateTime d) {
   final local = d.toLocal();
   return '${formatDay(local)}, ${formatTime(local)}';
 }
+
+/// "just now", "5 min ago", "3 h ago", "yesterday", then "Tue 3 Nov".
+String formatRelative(DateTime then, DateTime now) {
+  final diff = now.difference(then);
+  if (diff.inMinutes < 1) return 'just now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+  if (diff.inHours < 24) return '${diff.inHours} h ago';
+  final days = DateTime(now.year, now.month, now.day).difference(DateTime(then.year, then.month, then.day)).inDays;
+  return days == 1 ? 'yesterday' : formatDay(then.toLocal());
+}

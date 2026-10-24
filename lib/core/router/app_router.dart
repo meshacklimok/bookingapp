@@ -12,7 +12,17 @@ import '../../features/booking/presentation/my_bookings_screen.dart';
 import '../../features/checkout/presentation/checkout_screen.dart';
 import '../../features/discover/presentation/discover_screen.dart';
 import '../../features/discover/presentation/service_detail_screen.dart';
+import '../../features/admin/presentation/admin_screen.dart';
+import '../../features/notifications/presentation/notifications_screen.dart';
+import '../../features/org_dashboard/presentation/earnings_screen.dart';
+import '../../features/org_dashboard/presentation/payouts_screen.dart';
 import '../../features/org_dashboard/presentation/org_dashboard_screen.dart';
+import '../../features/org_dashboard/presentation/register_org_screen.dart';
+import '../../features/org_dashboard/presentation/service_form_screen.dart';
+import '../../features/org_dashboard/presentation/staff_detail_screen.dart';
+import '../../features/org_dashboard/presentation/staff_hours_screen.dart';
+import '../../features/org_dashboard/presentation/staff_screen.dart';
+import '../../features/org_dashboard/presentation/services_screen.dart';
 import '../../features/profile/presentation/edit_profile_screen.dart';
 import '../../features/profile/presentation/profile_screen.dart';
 import '../../features/scanner/presentation/scanner_screen.dart';
@@ -104,9 +114,63 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => TicketDetailScreen(ticketId: state.pathParameters['id']!),
       ),
       GoRoute(path: '/scanner', builder: (context, state) => const ScannerScreen()),
+      GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
+      GoRoute(path: '/admin', builder: (context, state) => const AdminScreen()),
+      // must stay above /org/:orgId, which would otherwise take "register" as an id
+      GoRoute(path: '/org/register', builder: (context, state) => const RegisterOrgScreen()),
       GoRoute(
         path: '/org/:orgId',
         builder: (context, state) => OrgDashboardScreen(orgId: state.pathParameters['orgId']!),
+        routes: [
+          GoRoute(
+            path: 'services',
+            builder: (context, state) => ServicesScreen(orgId: state.pathParameters['orgId']!),
+            routes: [
+              // "new" must stay above :serviceId
+              GoRoute(
+                path: 'new',
+                builder: (context, state) => ServiceFormScreen(orgId: state.pathParameters['orgId']!),
+              ),
+              GoRoute(
+                path: ':serviceId',
+                builder: (context, state) => ServiceFormScreen(
+                  orgId: state.pathParameters['orgId']!,
+                  serviceId: state.pathParameters['serviceId'],
+                ),
+              ),
+            ],
+          ),
+          GoRoute(
+            path: 'payouts',
+            builder: (context, state) => PayoutsScreen(orgId: state.pathParameters['orgId']!),
+          ),
+          GoRoute(
+            path: 'earnings',
+            builder: (context, state) => EarningsScreen(orgId: state.pathParameters['orgId']!),
+          ),
+          GoRoute(
+            path: 'staff',
+            builder: (context, state) => StaffScreen(orgId: state.pathParameters['orgId']!),
+            routes: [
+              GoRoute(
+                path: ':staffId',
+                builder: (context, state) => StaffDetailScreen(
+                  orgId: state.pathParameters['orgId']!,
+                  staffId: state.pathParameters['staffId']!,
+                ),
+                routes: [
+                  GoRoute(
+                    path: 'hours',
+                    builder: (context, state) => StaffHoursScreen(
+                      orgId: state.pathParameters['orgId']!,
+                      staffId: state.pathParameters['staffId']!,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
     ],
   );
