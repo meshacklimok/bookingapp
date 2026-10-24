@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/utils/errors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/async_body.dart';
+import '../../booking/presentation/cancel_booking_dialog.dart';
 import '../data/org_repository.dart';
+import '../domain/earnings.dart';
+import '../domain/organization.dart';
 
 class OrgDashboardScreen extends ConsumerWidget {
   const OrgDashboardScreen({super.key, required this.orgId});
@@ -14,27 +18,54 @@ class OrgDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bookings = ref.watch(orgBookingsProvider(orgId));
+    final org = ref.watch(organizationProvider(orgId)).valueOrNull;
+    final role = ref.watch(membershipsProvider).valueOrNull?.where((m) => m.orgId == orgId).firstOrNull?.role;
+    // RLS only lets owners and admins write services, so staff do not get the entry point.
+    final canManage = role == 'owner' || role == 'admin';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Dashboard')),
+      appBar: AppBar(title: Text(org?.name ?? 'Dashboard')),
       body: AsyncBody<List<OrgBooking>>(
         value: bookings,
         onRetry: () => ref.invalidate(orgBookingsProvider(orgId)),
         data: (items) {
-          final earned = items
-              .where((b) => b.status == 'confirmed' || b.status == 'completed')
-              .fold<int>(0, (sum, b) => sum + (b.earningsCents ?? 0));
           return RefreshIndicator(
             onRefresh: () async => ref.invalidate(orgBookingsProvider(orgId)),
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Card(
-                  child: ListTile(
-                    title: const Text('Earnings (after commission)'),
-                    subtitle: Text(formatKes(earned), style: Theme.of(context).textTheme.headlineSmall),
+                if (org != null) OrgStatusBanner(status: org.status),
+                if (canManage)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.design_services_outlined),
+                      title: const Text('Services'),
+                      subtitle: const Text('Appointments and events'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/org/$orgId/services'),
+                    ),
                   ),
-                ),
+                if (canManage)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.groups_outlined),
+                      title: const Text('Staff and hours'),
+                      subtitle: const Text('Who takes appointments, and when'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/org/$orgId/staff'),
+                    ),
+                  ),
+                if (canManage) _EarningsCard(orgId: orgId),
+                if (canManage)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.account_balance_wallet_outlined),
+                      title: const Text('Payouts'),
+                      subtitle: const Text('What you are owed and what was paid'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/org/$orgId/payouts'),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 Text('Bookings', style: Theme.of(context).textTheme.titleMedium),
                 if (items.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No bookings yet.')),
@@ -43,6 +74,53 @@ class OrgDashboardScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// All-time net earnings. The figures come from the database, so they are not capped by the bookings list below.
+class _EarningsCard extends ConsumerWidget {
+  const _EarningsCard({required this.orgId});
+
+  final String orgId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = ref.watch(earningsSummaryProvider((orgId, EarningsPeriod.allTime)));
+    return Card(
+      child: ListTile(
+        title: const Text('Earnings (after commission)'),
+        subtitle: Text(
+          summary.when(data: (s) => formatKes(s.netCents), loading: () => '…', error: (_, __) => 'Could not load'),
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => context.push('/org/$orgId/earnings'),
+      ),
+    );
+  }
+}
+
+class OrgStatusBanner extends StatelessWidget {
+  const OrgStatusBanner({super.key, required this.status});
+
+  final OrgStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, background, foreground) = switch (status) {
+      OrgStatus.approved => (Icons.verified_outlined, scheme.primaryContainer, scheme.onPrimaryContainer),
+      OrgStatus.pending => (Icons.hourglass_top, scheme.tertiaryContainer, scheme.onTertiaryContainer),
+      OrgStatus.suspended => (Icons.block, scheme.errorContainer, scheme.onErrorContainer),
+    };
+    return Card(
+      color: background,
+      child: ListTile(
+        leading: Icon(icon, color: foreground),
+        title: Text(status.label, style: TextStyle(color: foreground, fontWeight: FontWeight.w600)),
+        subtitle: Text(status.explanation, style: TextStyle(color: foreground)),
       ),
     );
   }
@@ -99,6 +177,17 @@ class _OrgBookingTile extends ConsumerWidget {
                             _mark(context, ref, 'no_show');
                           },
                         ),
+                        if (booking.startsAt.isAfter(DateTime.now()))
+                          ListTile(
+                            leading: const Icon(Icons.event_busy),
+                            title: const Text('Cancel and refund in full'),
+                            onTap: () async {
+                              Navigator.pop(sheet);
+                              final done = await confirmCancelBooking(context, ref,
+                                  bookingId: booking.id, title: booking.serviceTitle ?? 'this booking');
+                              if (done) ref.invalidate(orgBookingsProvider(orgId));
+                            },
+                          ),
                       ],
                     ),
                   ),
