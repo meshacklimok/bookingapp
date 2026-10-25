@@ -50,6 +50,8 @@ Deno.serve(async (req) => {
     if (error) throw error;
   } catch (e) {
     console.error('mpesa-callback failed', e);
+    // Non-2xx makes Daraja retry the callback later, so a failed confirmation is not lost.
+    return json({ error: 'processing_failed' }, 500);
   }
   return ack();
 });

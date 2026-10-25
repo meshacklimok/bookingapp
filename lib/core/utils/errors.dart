@@ -21,6 +21,8 @@ const _friendly = {
   'not_org_member': 'That person is not part of this organization.',
   'ticket_used': 'A ticket for this booking has already been scanned, so it cannot be cancelled.',
   'refund_not_pending': 'That refund was already handled.',
+  'has_active_bookings': 'You have upcoming bookings. Cancel them or wait until they are over, then delete your account.',
+  'org_has_bookings': 'Your organization has upcoming bookings. Add another owner or let them finish before deleting your account.',
   'forbidden': 'You do not have permission to do that.',
   'organizations_slug_key': 'An organization with a very similar name already exists. Try a more specific name.',
 };

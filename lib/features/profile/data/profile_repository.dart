@@ -25,6 +25,12 @@ class ProfileRepository {
     final userId = _client.auth.currentUser!.id;
     await _client.from('profiles').update({'full_name': fullName, 'phone': phone}).eq('id', userId);
   }
+
+  /// Anonymises and disables the account, then signs out. Fails while there are upcoming bookings.
+  Future<void> deleteAccount() async {
+    await _client.rpc('delete_my_account');
+    await _client.auth.signOut();
+  }
 }
 
 final profileRepositoryProvider = Provider((ref) => ProfileRepository(ref.watch(supabaseProvider)));

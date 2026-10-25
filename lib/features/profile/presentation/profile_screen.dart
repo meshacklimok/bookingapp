@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/supabase/supabase_providers.dart';
+import '../../../core/utils/errors.dart';
 import '../../notifications/data/notification_repository.dart';
 import '../../org_dashboard/data/org_repository.dart';
 import '../../org_dashboard/domain/organization.dart';
@@ -86,8 +87,43 @@ class ProfileScreen extends ConsumerWidget {
               title: const Text('Sign out'),
               onTap: () => client.auth.signOut(),
             ),
+          if (user != null)
+            ListTile(
+              leading: Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+              title: Text('Delete account', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              onTap: () => _confirmDelete(context, ref),
+            ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete your account?'),
+        content: const Text(
+          'Your profile and sign-in will be permanently removed. Booking and payment records are kept '
+          'without your personal details, as required for accounting. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref.read(profileRepositoryProvider).deleteAccount();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+      }
+    }
   }
 }

@@ -935,4 +935,56 @@ select pg_temp.check('the service role cannot settle a refund twice',
      where p.booking_id = 'e0000000-0000-0000-0000-000000000003'), 'processed')$$) = 'refund_not_pending');
 reset role;
 
+-- Account deletion --------------------------------------------------------------------------------
+insert into auth.users (id, email, raw_user_meta_data)
+values ('a0000000-0000-0000-0000-0000000000d0', 'dora@example.com', '{"full_name":"Dora"}');
+insert into auth.identities (user_id) values ('a0000000-0000-0000-0000-0000000000d0');
+insert into public.device_tokens (user_id, token) values ('a0000000-0000-0000-0000-0000000000d0', 'tok-dora');
+insert into public.bookings (id, customer_id, service_id, org_id, starts_at, ends_at, total_cents, status)
+values ('e0000000-0000-0000-0000-0000000000d6', 'a0000000-0000-0000-0000-0000000000d0', 'c0000000-0000-0000-0000-000000000002',
+        'b0000000-0000-0000-0000-000000000001', now() + interval '3 days', now() + interval '3 days 1 hour', 0, 'confirmed');
+
+select pg_temp.login(null);
+select pg_temp.check('anonymous users cannot delete an account',
+  pg_temp.err($$select public.delete_my_account()$$) like '%permission denied%');
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-0000000000d0');
+select pg_temp.check('an account with an upcoming booking cannot be deleted',
+  pg_temp.err($$select public.delete_my_account()$$) = 'has_active_bookings');
+select pg_temp.logout();
+
+update public.bookings set status = 'cancelled' where id = 'e0000000-0000-0000-0000-0000000000d6';
+select pg_temp.login('a0000000-0000-0000-0000-0000000000d0');
+select pg_temp.check('...but can be once the booking is cancelled', pg_temp.err($$select public.delete_my_account()$$) is null);
+select pg_temp.logout();
+select pg_temp.check('the profile is anonymised',
+  (select full_name = 'Deleted user' and phone is null from public.profiles where id = 'a0000000-0000-0000-0000-0000000000d0'));
+select pg_temp.check('sign-in is disabled and the email released',
+  (select banned_until = 'infinity' and email like 'deleted-%' and encrypted_password is null
+     from auth.users where id = 'a0000000-0000-0000-0000-0000000000d0')
+  and not exists (select 1 from auth.identities where user_id = 'a0000000-0000-0000-0000-0000000000d0'));
+select pg_temp.check('device tokens are removed',
+  not exists (select 1 from public.device_tokens where user_id = 'a0000000-0000-0000-0000-0000000000d0'));
+select pg_temp.check('booking history is kept',
+  exists (select 1 from public.bookings where id = 'e0000000-0000-0000-0000-0000000000d6'));
+
+-- the sole owner of an organization with upcoming bookings cannot leave it without an owner
+insert into public.bookings (customer_id, service_id, org_id, starts_at, ends_at, total_cents, status)
+values ('a0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-000000000001',
+        now() + interval '5 days', now() + interval '5 days 1 hour', 0, 'confirmed');
+select pg_temp.login('a0000000-0000-0000-0000-000000000003');
+select pg_temp.check('a sole owner with upcoming org bookings cannot delete the account',
+  pg_temp.err($$select public.delete_my_account()$$) in ('has_active_bookings', 'org_has_bookings'));
+select pg_temp.logout();
+
+-- ...once those bookings are gone it can, and the ownerless organization is suspended
+update public.bookings set status = 'cancelled' where org_id = 'b0000000-0000-0000-0000-000000000001' and status = 'confirmed';
+select pg_temp.login('a0000000-0000-0000-0000-000000000003');
+select pg_temp.check('a sole owner can delete once the org has no upcoming bookings', pg_temp.err($$select public.delete_my_account()$$) is null,
+  pg_temp.err($$select public.delete_my_account()$$));
+select pg_temp.logout();
+select pg_temp.check('...and their organization is suspended',
+  (select status = 'suspended' from public.organizations where id = 'b0000000-0000-0000-0000-000000000001'));
+
 \echo All invariant checks passed.
