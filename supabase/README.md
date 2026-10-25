@@ -64,3 +64,9 @@ double-booking, holds, inventory, payments, commission, check-in and RLS:
 PGHOST=127.0.0.1 PGPORT=5432 PGUSER=postgres supabase/tests/run.sh
 ```
 It drops and recreates a database named `booking_test`, so point it at a throwaway server.
+
+The payment callbacks (`mpesa-callback`, `paystack-webhook`) keep their logic in `handler.ts` and are tested with a fake
+database client, no network or Supabase needed. Requires [Deno](https://deno.com):
+```
+deno test --allow-env supabase/functions/
+```
