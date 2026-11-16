@@ -35,7 +35,7 @@ Customers search, pick a time or ticket, pay, and receive a **QR code ticket** s
 A commission is taken **per booking**. The rate is set by the platform owner and can differ per organization or per service. The rate is recorded on each booking when it is paid, so later changes never affect past records.
 
 ## Scope
-- **Market:** Kenya, KES only, English and Swahili.
+- **Market:** Kenya, KES only, English only.
 - **Platforms:** Android and iOS (Flutter), plus a web admin panel later.
 - **Release plan:** v1 appointments, v1.5 events and scanner, v2 resources and extras.
 

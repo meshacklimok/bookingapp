@@ -14,7 +14,7 @@ All payment logic runs in Supabase Edge Functions. Secrets never ship in the app
 - Store `CheckoutRequestID` as the payment `reference`.
 - `mpesa-callback` receives `ResultCode`. `0` means success, so store `MpesaReceiptNumber`. Any other code marks the payment `failed`.
 - Callback endpoint must be public HTTPS. Validate that the `CheckoutRequestID` matches a pending payment and that the amount matches.
-- Handle the case where the callback never arrives: a scheduled job queries the STK Push status for pending payments older than 2 minutes.
+- Handle the case where the callback never arrives: every minute pg_cron calls `mpesa-reconcile`, which queries the STK Push status of pending payments older than 2 minutes (up to a day old) and confirms or fails them. The query returns no receipt number, so those payments are confirmed without one. If the hold already expired, `confirm_booking_payment` flags the payment `needs_review` for a manual refund.
 
 ## Paystack
 - `create-payment` initializes a transaction (amount in the smallest unit, currency KES) and returns the access code.
@@ -37,6 +37,13 @@ The `reference` column on `payments` is unique. Webhooks and callbacks that arri
 - On cancel: tickets are voided, the booking records `refund_cents`, and `commission_cents` / `org_earnings_cents` shrink pro rata (the platform returns its share of the refund). A pending `refunds` row is created and both sides are notified.
 - The money still goes back by hand for now: a platform admin sends it and marks the refund processed (`resolve_refund`), which sets the payment to `refunded` once it is fully refunded. The `process-refund` Edge Function sends Paystack refunds automatically: the app calls it right after a cancellation (customer, organization or admin), and admins can retry a pending one from the Refunds tab ("Send via Paystack"). It claims the refund (`processing`) so it cannot be sent twice, calls Paystack's refund API, and `paystack-webhook` settles it on `refund.processed` / `refund.failed` through `finish_refund`. A request error puts the refund back to `pending` with `last_error`. M-Pesa refunds stay manual: Daraja's reversal API cannot refund part of a payment.
 
+## Deposits
+A service can set `deposit_pct`. At checkout the customer chooses between paying in full and paying only the deposit (`set_payment_plan`, rounded up to whole shillings). The booking keeps `total_cents` as the amount charged online and records the rest in `balance_cents`, due at the venue, so payments, commission, refunds and the earnings ledger keep describing money the platform actually collected.
+- Commission is taken on the deposit only, because the platform never handles the balance.
+- Cancelling refunds the deposit by the service's cancellation policy; the balance never becomes due.
+- The scanner shows the balance still owed at check-in, and the organization marks it collected (`mark_balance_paid`). The platform does not collect or track the cash itself.
+- A promo code applies to the full price and resets the plan; the app then asks for the deposit again.
+
 ## Payouts
 - `org_balance`: payable = net earnings of settled bookings (over, or cancelled with money kept) minus payouts; upcoming earnings are shown separately because they can still be refunded.
 - A platform admin sends the money (M-Pesa or bank) and records it with `record_payout`, which refuses more than the payable balance. Organizations read their balance and history; they cannot write payouts.
@@ -53,7 +60,7 @@ The profile menu shows "Platform admin" for admins: approve or suspend organizat
 - On confirmation, create one ticket per seat or person with a random `qr_token`.
 - The QR payload is a random 256-bit token. It cannot be guessed or forged, because the server looks it up on every scan. A screenshot can be copied, but only the first scan is accepted.
 - Planned for offline scanning (v1.5): HMAC-signed tokens so the scanner can validate without a connection.
-- The app renders it with `qr_flutter`. Local caching so the wallet works offline is not built yet.
+- The app renders it with `qr_flutter`. The wallet is saved on the device (`shared_preferences`, per user) after each load, so tickets still open without a connection, marked as a saved copy whose status may be out of date. Signing out clears it.
 
 ### Scanner (staff)
 - `mobile_scanner` reads the QR and calls the `verify_ticket` database function.

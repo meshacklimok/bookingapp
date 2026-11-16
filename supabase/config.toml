@@ -6,3 +6,15 @@ verify_jwt = false
 
 [functions.paystack-webhook]
 verify_jwt = false
+
+# Called by pg_cron, which checks in with the x-cron-secret header instead.
+[functions.mpesa-reconcile]
+verify_jwt = false
+
+# Called by pg_cron, which checks in with the x-cron-secret header instead.
+[functions.send-push]
+verify_jwt = false
+
+# Called by pg_cron, which checks in with the x-cron-secret header instead.
+[functions.send-sms]
+verify_jwt = false

@@ -42,6 +42,11 @@ class ServiceRepository {
     return Service.fromMap(row);
   }
 
+  Future<List<Review>> reviews(String serviceId) async {
+    final rows = await _client.rpc('get_service_reviews', params: {'p_service_id': serviceId}) as List<dynamic>;
+    return rows.map((r) => Review.fromMap(r as Map<String, dynamic>)).toList();
+  }
+
   Future<List<TicketTier>> tiers(String serviceId) async {
     final rows = await _client.from('ticket_tiers').select().eq('service_id', serviceId).order('price_cents');
     return rows.map(TicketTier.fromMap).toList();
@@ -74,4 +79,8 @@ final serviceProvider = FutureProvider.autoDispose.family<Service, String>(
 
 final tiersProvider = FutureProvider.autoDispose.family<List<TicketTier>, String>(
   (ref, serviceId) => ref.watch(serviceRepositoryProvider).tiers(serviceId),
+);
+
+final reviewsProvider = FutureProvider.autoDispose.family<List<Review>, String>(
+  (ref, serviceId) => ref.watch(serviceRepositoryProvider).reviews(serviceId),
 );

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/supabase/supabase_providers.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/async_body.dart';
+import '../../../shared/widgets/star_rating.dart';
 import '../data/service_repository.dart';
 import '../domain/service.dart';
 
@@ -35,7 +36,9 @@ class ServiceDetailScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             if (s.mode == BookingMode.event && s.eventStartsAt != null)
               _InfoRow(icon: Icons.event, text: formatDateTime(s.eventStartsAt!)),
-            if (s.mode == BookingMode.appointment) _InfoRow(icon: Icons.schedule, text: '${s.durationMin} minutes'),
+            if (s.mode != BookingMode.event) _InfoRow(icon: Icons.schedule, text: '${s.durationMin} minutes'),
+            if (s.ratingCount > 0)
+              _InfoRow(icon: Icons.star_rounded, text: '${s.ratingAvg!.toStringAsFixed(1)} (${s.ratingCount} ${s.ratingCount == 1 ? 'review' : 'reviews'})'),
             if (s.location != null) _InfoRow(icon: Icons.place_outlined, text: s.location!),
             _InfoRow(
               icon: Icons.payments_outlined,
@@ -48,15 +51,54 @@ class ServiceDetailScreen extends ConsumerWidget {
             ],
             if (s.mode == BookingMode.appointment) _StaffSection(serviceId: s.id),
             const SizedBox(height: 24),
-            if (s.mode == BookingMode.resource)
-              const Text('Online booking for this service is coming soon.')
-            else
-              FilledButton(
-                onPressed: () => loggedIn ? context.push('/book/${s.id}') : context.push('/login'),
-                child: Text(loggedIn ? (s.mode == BookingMode.event ? 'Get tickets' : 'Book now') : 'Sign in to book'),
-              ),
+            FilledButton(
+              onPressed: () => loggedIn ? context.push('/book/${s.id}') : context.push('/login'),
+              child: Text(loggedIn ? (s.mode == BookingMode.event ? 'Get tickets' : 'Book now') : 'Sign in to book'),
+            ),
+            if (s.ratingCount > 0) _ReviewsSection(serviceId: s.id),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ReviewsSection extends ConsumerWidget {
+  const _ReviewsSection({required this.serviceId});
+
+  final String serviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Like the team list, reviews are a nice-to-have: loading and errors render nothing.
+    final reviews = ref.watch(reviewsProvider(serviceId)).valueOrNull ?? const [];
+    if (reviews.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Reviews', style: Theme.of(context).textTheme.titleMedium),
+          for (final r in reviews)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      StarRating(rating: r.rating),
+                      const SizedBox(width: 8),
+                      Text(r.reviewer, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      Text(formatRelative(r.createdAt, DateTime.now()), style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  ),
+                  if (r.comment != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(r.comment!)),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

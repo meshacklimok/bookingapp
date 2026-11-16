@@ -987,4 +987,323 @@ select pg_temp.logout();
 select pg_temp.check('...and their organization is suspended',
   (select status = 'suspended' from public.organizations where id = 'b0000000-0000-0000-0000-000000000001'));
 
+-- Push delivery -----------------------------------------------------------------------------------
+delete from public.notifications;
+insert into public.notifications (user_id, title, created_at) values
+  ('a0000000-0000-0000-0000-000000000001', 'old', now() - interval '2 days'),
+  ('a0000000-0000-0000-0000-000000000001', 'first', now() - interval '3 minutes'),
+  ('a0000000-0000-0000-0000-000000000002', 'second', now() - interval '2 minutes'),
+  ('a0000000-0000-0000-0000-000000000002', 'third', now() - interval '1 minute');
+select pg_temp.check('claiming takes the oldest notifications first and skips ones older than a day',
+  (select array_agg(title order by title) from public.claim_unpushed_notifications(2)) = array['first', 'second']);
+select pg_temp.check('claimed notifications are marked pushed, so the next run gets only the rest',
+  (select array_agg(title) from public.claim_unpushed_notifications(10)) = array['third']
+  and (select count(*) from public.claim_unpushed_notifications(10)) = 0);
+select pg_temp.check('the stale notification is closed without being sent',
+  (select pushed_at is not null from public.notifications where title = 'old'));
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('app users cannot claim notifications',
+  pg_temp.err($$select * from public.claim_unpushed_notifications(1)$$) like '%permission denied%');
+select public.register_device_token('tok-1', 'android');
+select pg_temp.logout();
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select public.register_device_token('tok-1', 'ios');
+select pg_temp.logout();
+select pg_temp.check('a device token moves to whoever registered it last',
+  (select count(*) from public.device_tokens where token = 'tok-1') = 1
+  and (select user_id from public.device_tokens where token = 'tok-1') = 'a0000000-0000-0000-0000-000000000002');
+select pg_temp.login(null);
+select pg_temp.check('signed-out users cannot register a device',
+  pg_temp.err($$select public.register_device_token('tok-2')$$) is not null);
+select pg_temp.logout();
+
+-- Resources, promo codes and reviews --------------------------------------------------------------------
+-- Owner 1 runs "Courts"; Alice and Bob are the customers.
+insert into auth.users (id, raw_user_meta_data) values ('a1000000-0000-0000-0000-000000000001', '{"full_name":"Courtney Owner"}');
+insert into public.organizations (id, name, slug, status, created_by)
+values ('f1000000-0000-0000-0000-000000000001', 'Courts', 'courts', 'approved', 'a1000000-0000-0000-0000-000000000001');
+insert into public.services (id, org_id, title, booking_mode, price_cents, duration_min, buffer_min, open_time, close_time)
+values ('f2000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000001', 'Tennis court', 'resource', 200000, 60, 0, '09:00', '12:00');
+
+select pg_temp.check('resource slots follow opening hours',
+  (select count(*) from public.get_resource_slots('f2000000-0000-0000-0000-000000000001',
+     (current_setting('t.slot')::timestamptz at time zone 'Africa/Nairobi')::date)) = 3);
+select pg_temp.check('appointment slots do not apply to a resource',
+  (select count(*) from public.get_available_slots('f2000000-0000-0000-0000-000000000001',
+     (current_setting('t.slot')::timestamptz at time zone 'Africa/Nairobi')::date)) = 0);
+select pg_temp.check('a resource cannot end before it opens',
+  pg_temp.err($$update public.services set close_time = '08:00' where id = 'f2000000-0000-0000-0000-000000000001'$$) like '%services_hours_check%');
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select set_config('t.court1', (select id::text from public.create_booking_hold('f2000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz)), false);
+select pg_temp.check('a customer can hold a resource slot at the list price, with no staff',
+  (select status = 'held' and total_cents = 200000 and staff_id is null and exclusive_key = service_id
+     from public.bookings where id = current_setting('t.court1')::uuid));
+select pg_temp.logout();
+select pg_temp.check('the held slot leaves the resource availability',
+  (select count(*) from public.get_resource_slots('f2000000-0000-0000-0000-000000000001',
+     (current_setting('t.slot')::timestamptz at time zone 'Africa/Nairobi')::date)) = 2);
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('nobody else can book the same resource slot',
+  pg_temp.err($$select public.create_booking_hold('f2000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz)$$) = 'slot_unavailable');
+select pg_temp.check('a time that is not on the slot grid is refused',
+  pg_temp.err($$select public.create_booking_hold('f2000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz + interval '30 minutes')$$) = 'slot_unavailable');
+select pg_temp.check('a time is required',
+  pg_temp.err($$select public.create_booking_hold('f2000000-0000-0000-0000-000000000001')$$) = 'slot_required');
+select pg_temp.logout();
+
+-- promo codes
+select pg_temp.login('a1000000-0000-0000-0000-000000000001');
+insert into public.promo_codes (org_id, code, percent_off) values ('f1000000-0000-0000-0000-000000000001', 'SAVE20', 20);
+insert into public.promo_codes (org_id, code, amount_off_cents) values ('f1000000-0000-0000-0000-000000000001', 'FLAT', 50000);
+insert into public.promo_codes (org_id, code, amount_off_cents) values ('f1000000-0000-0000-0000-000000000001', 'HUGE', 999999);
+insert into public.promo_codes (org_id, code, percent_off, max_uses) values ('f1000000-0000-0000-0000-000000000001', 'FREE', 100, 1);
+insert into public.promo_codes (org_id, code, percent_off, valid_until)
+values ('f1000000-0000-0000-0000-000000000001', 'OLD', 10, now() - interval '1 day');
+select pg_temp.check('codes are unique per organization regardless of case',
+  pg_temp.err($$insert into public.promo_codes (org_id, code, percent_off) values ('f1000000-0000-0000-0000-000000000001', 'save20', 5)$$) like '%promo_codes_code_idx%');
+select pg_temp.check('a code is either a percentage or an amount, never both or neither',
+  pg_temp.err($$insert into public.promo_codes (org_id, code, percent_off, amount_off_cents) values ('f1000000-0000-0000-0000-000000000001', 'BOTH', 5, 5)$$) is not null
+  and pg_temp.err($$insert into public.promo_codes (org_id, code) values ('f1000000-0000-0000-0000-000000000001', 'NONE')$$) is not null);
+select pg_temp.check('the organization sees its codes with usage counts',
+  (select count(*) from public.org_promo_codes('f1000000-0000-0000-0000-000000000001')) = 5);
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('customers cannot read the code list',
+  (select count(*) from public.promo_codes) = 0
+  and pg_temp.err($$select * from public.org_promo_codes('f1000000-0000-0000-0000-000000000001')$$) = 'forbidden');
+select pg_temp.check('customers cannot create codes',
+  pg_temp.err($$insert into public.promo_codes (org_id, code, percent_off) values ('f1000000-0000-0000-0000-000000000001', 'MINE', 99)$$) like '%row-level security%');
+select pg_temp.check('a code (any case) takes its percentage off the list price',
+  (select total_cents = 160000 and discount_cents = 40000 from public.apply_promo_code(current_setting('t.court1')::uuid, ' save20 ')));
+select pg_temp.check('applying a code again does not compound the discount',
+  (select total_cents = 160000 from public.apply_promo_code(current_setting('t.court1')::uuid, 'SAVE20')));
+select pg_temp.check('swapping to a fixed-amount code starts from the list price',
+  (select total_cents = 150000 and discount_cents = 50000 from public.apply_promo_code(current_setting('t.court1')::uuid, 'FLAT')));
+select pg_temp.check('a discount larger than the price makes it free, never negative',
+  (select total_cents = 0 and discount_cents = 200000 from public.apply_promo_code(current_setting('t.court1')::uuid, 'HUGE')));
+select pg_temp.check('removing the code restores the list price',
+  (select total_cents = 200000 and discount_cents = 0 and promo_code_id is null from public.remove_promo_code(current_setting('t.court1')::uuid)));
+select pg_temp.check('unknown, expired and other organizations'' codes are refused',
+  pg_temp.err($$select public.apply_promo_code(current_setting('t.court1')::uuid, 'NOPE')$$) = 'promo_invalid'
+  and pg_temp.err($$select public.apply_promo_code(current_setting('t.court1')::uuid, 'OLD')$$) = 'promo_expired');
+select pg_temp.check('a booking that costs money cannot be confirmed for free',
+  pg_temp.err($$select public.confirm_free_booking(current_setting('t.court1')::uuid)$$) = 'booking_not_free');
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('nobody can apply a code to someone else''s booking',
+  pg_temp.err($$select public.apply_promo_code(current_setting('t.court1')::uuid, 'SAVE20')$$) = 'booking_not_found');
+select pg_temp.logout();
+
+-- a fully discounted booking is confirmed without a payment, and a single-use code is spent
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select public.apply_promo_code(current_setting('t.court1')::uuid, 'FREE');
+select public.confirm_free_booking(current_setting('t.court1')::uuid);
+select pg_temp.logout();
+select pg_temp.check('confirming a free booking issues a ticket and records no commission',
+  (select status = 'confirmed' and expires_at is null and commission_cents = 0 and org_earnings_cents = 0
+     from public.bookings where id = current_setting('t.court1')::uuid)
+  and (select count(*) from public.tickets where booking_id = current_setting('t.court1')::uuid) = 1);
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select public.confirm_free_booking(current_setting('t.court1')::uuid);
+select pg_temp.logout();
+select pg_temp.check('confirming twice does not issue a second ticket',
+  (select count(*) from public.tickets where booking_id = current_setting('t.court1')::uuid) = 1);
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select set_config('t.court2', (select id::text from public.create_booking_hold('f2000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz + interval '1 hour')), false);
+select pg_temp.check('the same customer cannot use a code twice',
+  pg_temp.err($$select public.apply_promo_code(current_setting('t.court2')::uuid, 'FREE')$$) = 'promo_already_used');
+select pg_temp.logout();
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select set_config('t.court3', (select id::text from public.create_booking_hold('f2000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz + interval '2 hours')), false);
+select pg_temp.check('a code with no uses left is refused',
+  pg_temp.err($$select public.apply_promo_code(current_setting('t.court3')::uuid, 'FREE')$$) = 'promo_used_up');
+select pg_temp.logout();
+update public.bookings set status = 'cancelled' where id = current_setting('t.court1')::uuid;
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('a cancelled booking gives its use back',
+  (select total_cents = 0 from public.apply_promo_code(current_setting('t.court3')::uuid, 'FREE')));
+select pg_temp.logout();
+
+-- a payment started on a booking blocks code changes, and the discounted price is what is committed
+update public.bookings set status = 'pending_payment' where id = current_setting('t.court3')::uuid;
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('codes cannot change once payment has started',
+  pg_temp.err($$select public.apply_promo_code(current_setting('t.court3')::uuid, 'SAVE20')$$) = 'cannot_apply'
+  and pg_temp.err($$select public.remove_promo_code(current_setting('t.court3')::uuid)$$) = 'cannot_apply');
+select pg_temp.logout();
+
+-- reviews
+insert into public.bookings (id, customer_id, service_id, org_id, starts_at, ends_at, total_cents, status) values
+  ('f3000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000001',
+   'f1000000-0000-0000-0000-000000000001', now() - interval '3 days', now() - interval '3 days' + interval '1 hour', 200000, 'completed'),
+  ('f3000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000002', 'f2000000-0000-0000-0000-000000000001',
+   'f1000000-0000-0000-0000-000000000001', now() - interval '2 days', now() - interval '2 days' + interval '1 hour', 200000, 'confirmed'),
+  ('f3000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000001',
+   'f1000000-0000-0000-0000-000000000001', now() + interval '3 days', now() + interval '3 days' + interval '1 hour', 200000, 'confirmed'),
+  ('f3000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000001',
+   'f1000000-0000-0000-0000-000000000001', now() - interval '5 days', now() - interval '5 days' + interval '1 hour', 200000, 'cancelled');
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('a customer can review a booking that has ended',
+  (select rating = 5 from public.submit_review('f3000000-0000-0000-0000-000000000001', 5, '  Great court  ')));
+select pg_temp.check('the service shows the rating',
+  (select rating_avg = 5.00 and rating_count = 1 from public.services where id = 'f2000000-0000-0000-0000-000000000001'));
+select pg_temp.check('a booking that has not happened yet, or was cancelled, cannot be reviewed',
+  pg_temp.err($$select public.submit_review('f3000000-0000-0000-0000-000000000003', 5)$$) = 'cannot_review'
+  and pg_temp.err($$select public.submit_review('f3000000-0000-0000-0000-000000000004', 5)$$) = 'cannot_review');
+select pg_temp.check('nobody can review someone else''s booking',
+  pg_temp.err($$select public.submit_review('f3000000-0000-0000-0000-000000000002', 5)$$) = 'cannot_review');
+select pg_temp.check('ratings are 1 to 5',
+  pg_temp.err($$select public.submit_review('f3000000-0000-0000-0000-000000000001', 6)$$) = 'invalid_rating'
+  and pg_temp.err($$select public.submit_review('f3000000-0000-0000-0000-000000000001', 0)$$) = 'invalid_rating');
+select pg_temp.check('reviewing again edits the review instead of adding one',
+  (select rating = 3 and comment is null from public.submit_review('f3000000-0000-0000-0000-000000000001', 3))
+  and (select count(*) from public.reviews) = 1);
+select pg_temp.check('reviews cannot be written or edited directly',
+  pg_temp.err($$insert into public.reviews (booking_id, service_id, org_id, customer_id, rating) values ('f3000000-0000-0000-0000-000000000003', 'f2000000-0000-0000-0000-000000000001', 'f1000000-0000-0000-0000-000000000001', auth.uid(), 5)$$) like '%permission denied%'
+  and pg_temp.err($$update public.reviews set rating = 5$$) like '%permission denied%');
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select public.submit_review('f3000000-0000-0000-0000-000000000002', 4, 'Good');
+select pg_temp.check('the average covers every review',
+  (select rating_avg = 3.50 and rating_count = 2 from public.services where id = 'f2000000-0000-0000-0000-000000000001'));
+select pg_temp.check('a customer only reads their own review rows',
+  (select count(*) from public.reviews) = 1);
+select pg_temp.logout();
+
+select pg_temp.login(null);
+select pg_temp.check('anyone can read a service''s reviews with first names only',
+  (select array_agg(reviewer order by reviewer) from public.get_service_reviews('f2000000-0000-0000-0000-000000000001')) = array['Alice', 'Bob']);
+select pg_temp.logout();
+
+select pg_temp.login('a1000000-0000-0000-0000-000000000001');
+select pg_temp.check('the organization sees the reviews of its services',
+  (select count(*) from public.reviews) = 2);
+select pg_temp.logout();
+
+delete from public.reviews where booking_id = 'f3000000-0000-0000-0000-000000000002';
+select pg_temp.check('deleting a review updates the average',
+  (select rating_avg = 3.00 and rating_count = 1 from public.services where id = 'f2000000-0000-0000-0000-000000000001'));
+
+-- Rescheduling ------------------------------------------------------------------------------------------
+-- Courts: free cancellation window 24h. Slots are 09:00-12:00 Nairobi, hourly, on the day t.slot falls on.
+insert into public.bookings (id, customer_id, service_id, org_id, starts_at, ends_at, total_cents, status, exclusive_key) values
+  ('f3000000-0000-0000-0000-000000000010', 'a0000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000001',
+   'f1000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz, current_setting('t.slot')::timestamptz + interval '1 hour',
+   200000, 'confirmed', 'f2000000-0000-0000-0000-000000000001'),
+  ('f3000000-0000-0000-0000-000000000011', 'a0000000-0000-0000-0000-000000000001', 'f2000000-0000-0000-0000-000000000001',
+   'f1000000-0000-0000-0000-000000000001', now() + interval '2 hours', now() + interval '3 hours', 200000, 'confirmed', null);
+insert into public.tickets (booking_id, org_id, customer_id)
+values ('f3000000-0000-0000-0000-000000000010', 'f1000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001');
+-- t.court3 (Bob) holds 11:00 on the same day but was left pending_payment; free it for this test
+update public.bookings set status = 'cancelled' where id = current_setting('t.court3')::uuid;
+insert into public.notifications (user_id, title, dedupe_key)
+values ('a0000000-0000-0000-0000-000000000001', 'Coming up', 'reminder:f3000000-0000-0000-0000-000000000010');
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('a paid booking moves to a free slot and keeps its price and ticket',
+  (select starts_at = current_setting('t.slot')::timestamptz + interval '2 hours' and total_cents = 200000 and status = 'confirmed'
+     from public.reschedule_booking('f3000000-0000-0000-0000-000000000010', current_setting('t.slot')::timestamptz + interval '2 hours')));
+select pg_temp.check('the ticket survives',
+  (select count(*) from public.tickets where booking_id = 'f3000000-0000-0000-0000-000000000010' and status = 'valid') = 1);
+select pg_temp.check('the reminder is re-armed for the new time',
+  (select count(*) from public.notifications where dedupe_key = 'reminder:f3000000-0000-0000-0000-000000000010') = 0);
+select pg_temp.check('the old slot is free again',
+  (select count(*) from public.get_resource_slots('f2000000-0000-0000-0000-000000000001',
+     (current_setting('t.slot')::timestamptz at time zone 'Africa/Nairobi')::date)
+   where slot_start = current_setting('t.slot')::timestamptz) = 1);
+select pg_temp.check('a taken slot is refused',
+  pg_temp.err($$select public.reschedule_booking('f3000000-0000-0000-0000-000000000010', current_setting('t.slot')::timestamptz + interval '2 hours')$$) = 'slot_unavailable');
+select pg_temp.check('a time off the slot grid is refused',
+  pg_temp.err($$select public.reschedule_booking('f3000000-0000-0000-0000-000000000010', current_setting('t.slot')::timestamptz + interval '30 minutes')$$) = 'slot_unavailable');
+select pg_temp.check('inside the free-cancellation window, rescheduling is closed',
+  pg_temp.err($$select public.reschedule_booking('f3000000-0000-0000-0000-000000000011', current_setting('t.slot')::timestamptz)$$) = 'reschedule_window_closed');
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('only the customer can reschedule their booking',
+  pg_temp.err($$select public.reschedule_booking('f3000000-0000-0000-0000-000000000010', current_setting('t.slot')::timestamptz)$$) = 'cannot_reschedule');
+select pg_temp.logout();
+
+select pg_temp.login('a1000000-0000-0000-0000-000000000001');
+select pg_temp.check('the organization is told',
+  (select count(*) from public.notifications where title = 'Booking rescheduled' and user_id = auth.uid()) = 1);
+select pg_temp.logout();
+
+update public.tickets set status = 'used' where booking_id = 'f3000000-0000-0000-0000-000000000010';
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('a scanned ticket cannot be moved',
+  pg_temp.err($$select public.reschedule_booking('f3000000-0000-0000-0000-000000000010', current_setting('t.slot')::timestamptz)$$) = 'ticket_used');
+select pg_temp.check('an unknown booking cannot be rescheduled',
+  pg_temp.err($$select public.reschedule_booking(null, now())$$) = 'cannot_reschedule');
+select pg_temp.logout();
+
+-- Deposits ------------------------------------------------------------------------------------------------------
+update public.services set deposit_pct = 25 where id = 'f2000000-0000-0000-0000-000000000001';
+select pg_temp.check('a deposit percentage must be between 1 and 99',
+  pg_temp.err($$update public.services set deposit_pct = 100 where id = 'f2000000-0000-0000-0000-000000000001'$$) like '%deposit_pct%'
+  and pg_temp.err($$update public.services set deposit_pct = 0 where id = 'f2000000-0000-0000-0000-000000000001'$$) like '%deposit_pct%');
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select set_config('t.dep1', (select id::text from public.create_booking_hold('f2000000-0000-0000-0000-000000000001', current_setting('t.slot')::timestamptz)), false);
+select pg_temp.check('paying a deposit splits the price: 25% of 2000.00 online, the rest at the venue',
+  (select total_cents = 50000 and balance_cents = 150000 from public.set_payment_plan(current_setting('t.dep1')::uuid, true)));
+select pg_temp.check('choosing again gives the same split',
+  (select total_cents = 50000 and balance_cents = 150000 from public.set_payment_plan(current_setting('t.dep1')::uuid, true)));
+select pg_temp.check('a promo code is taken off the full price and resets the plan',
+  (select total_cents = 160000 and balance_cents = 0 and discount_cents = 40000 from public.apply_promo_code(current_setting('t.dep1')::uuid, 'SAVE20')));
+select pg_temp.check('the deposit is then 25% of the discounted price',
+  (select total_cents = 40000 and balance_cents = 120000 from public.set_payment_plan(current_setting('t.dep1')::uuid, true)));
+select pg_temp.check('removing the code restores the full price in one piece',
+  (select total_cents = 200000 and balance_cents = 0 and discount_cents = 0 from public.remove_promo_code(current_setting('t.dep1')::uuid)));
+select pg_temp.check('the customer can go back to paying in full',
+  (select total_cents = 200000 and balance_cents = 0 from public.set_payment_plan(current_setting('t.dep1')::uuid, false)));
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('nobody can change the plan of someone else''s booking',
+  pg_temp.err($$select public.set_payment_plan(current_setting('t.dep1')::uuid, true)$$) = 'booking_not_found');
+select pg_temp.logout();
+
+update public.services set deposit_pct = null where id = 'f2000000-0000-0000-0000-000000000001';
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('a service without a deposit offer refuses one',
+  pg_temp.err($$select public.set_payment_plan(current_setting('t.dep1')::uuid, true)$$) = 'deposit_not_offered');
+select pg_temp.logout();
+update public.services set deposit_pct = 25 where id = 'f2000000-0000-0000-0000-000000000001';
+
+-- paying the deposit confirms the booking; the commission is on what was collected, refunds follow the deposit
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select public.set_payment_plan(current_setting('t.dep1')::uuid, true);
+select pg_temp.logout();
+insert into public.payments (id, booking_id, customer_id, org_id, provider, amount_cents, reference)
+select 'f4000000-0000-0000-0000-000000000001', id, customer_id, org_id, 'paystack', total_cents, 'dep-ref-1'
+  from public.bookings where id = current_setting('t.dep1')::uuid;
+select public.confirm_booking_payment('f4000000-0000-0000-0000-000000000001', 'RCPT-DEP');
+select pg_temp.check('commission is taken on the deposit only',
+  (select status = 'confirmed' and total_cents = 50000 and commission_cents = 5000 and org_earnings_cents = 45000 and balance_cents = 150000
+     from public.bookings where id = current_setting('t.dep1')::uuid));
+select pg_temp.login('a0000000-0000-0000-0000-000000000001');
+select pg_temp.check('the plan is locked once the booking is paid',
+  pg_temp.err($$select public.set_payment_plan(current_setting('t.dep1')::uuid, false)$$) = 'cannot_apply');
+select pg_temp.logout();
+
+select pg_temp.login('a0000000-0000-0000-0000-000000000002');
+select pg_temp.check('a customer cannot mark a balance as paid',
+  pg_temp.err($$select public.mark_balance_paid(current_setting('t.dep1')::uuid)$$) = 'forbidden');
+select pg_temp.logout();
+select pg_temp.login('a1000000-0000-0000-0000-000000000001');
+select pg_temp.check('check-in reports the balance still due',
+  (select (public.verify_ticket((select qr_token from public.tickets where booking_id = current_setting('t.dep1')::uuid)) ->> 'balance_due_cents')::bigint = 150000));
+select public.mark_balance_paid(current_setting('t.dep1')::uuid);
+select pg_temp.check('the organization can record the balance as collected, once',
+  (select balance_paid_at is not null from public.bookings where id = current_setting('t.dep1')::uuid)
+  and pg_temp.err($$select public.mark_balance_paid(current_setting('t.dep1')::uuid)$$) = 'no_balance_due');
+select pg_temp.logout();
+
 \echo All invariant checks passed.

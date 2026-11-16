@@ -12,7 +12,7 @@ A multi-purpose booking platform built with **Flutter** and **Supabase**. Custom
 | Currency | KES only (stored as integer cents; `currency` column kept for future) |
 | Commission | Per booking, rate set by the owner. Configurable at platform, organization and service level (most specific wins). Snapshotted on each booking |
 | Build order | Appointments first, then events, then resources |
-| Languages | English and Swahili |
+| Language | English only |
 
 ## Booking modes
 | Mode | Examples | Availability logic |
@@ -34,7 +34,7 @@ A user can belong to several organizations.
 ## Features by release
 
 ### v1 (launchable)
-- Auth: email, Google, phone OTP, guest browsing
+- Auth: email and password, Google, guest browsing
 - Discovery: categories, search, filters, service detail
 - Appointment booking with staff selection and slot picker
 - Inventory hold during checkout (10 min) with auto-expiry
@@ -48,14 +48,14 @@ A user can belong to several organizations.
 
 ### v1.5
 - Event ticketing with tiers and the QR scanner (check-in)
-- Promo codes, deposits and partial payments
+- Promo codes (done: per organization, percent or amount off, usage limits, one use per customer; the organization funds the discount). Deposits (done: a service can offer a deposit percentage; the customer pays it online and the rest at the venue, and the organization marks the balance collected)
 - Cancellation policies, reschedule
-- Reviews and ratings (verified bookings only)
+- Reviews and ratings (done: one per finished booking, average shown on the service)
 - SMS reminders (Africa's Talking)
 - Receipts (PDF)
 
 ### v2
-- Resource and venue booking
+- Resource and venue booking (basic version done: fixed slots between daily opening and closing time; multi-slot and date-range bookings are still to do)
 - Recurring and group bookings
 - Wallet and vouchers
 - Multi-branch organizations
@@ -66,7 +66,7 @@ A user can belong to several organizations.
 - Add to Apple/Google Wallet, ticket transfer, seat maps
 
 ## Customer features (full list)
-Nearby search, open-now filter, favorites, follow organizations, reschedule in app, group payment links, gift vouchers, saved M-Pesa number, verified photo reviews, PDF receipts, Swahili and English, accessibility support.
+Nearby search, open-now filter, favorites, follow organizations, reschedule in app, group payment links, gift vouchers, saved M-Pesa number, verified photo reviews, PDF receipts, accessibility support.
 
 ## Organization features (full list)
 Calendar (day, week, month, drag to reschedule), staff schedules and leave, per-staff services and pricing, deposits, cancellation policies, no-show tracking, add-ons and packages, promo codes, walk-in and manual bookings, customer list with notes and tags, analytics, payout dashboard with CSV export, waitlist, public business page with QR link, multi-branch.
@@ -75,7 +75,7 @@ Calendar (day, week, month, drag to reschedule), staff schedules and leave, per-
 Organization verification (KYC), suspend and approve, commission controls, disputes and refunds, revenue dashboard, featured listings and banners, category management, audit log, fraud checks.
 
 ## Trust and safety
-Phone OTP verification, rate limiting on booking and payment endpoints, report and block, data export and account deletion (required by app stores).
+Email verification, rate limiting on booking and payment endpoints, report and block, data export and account deletion (required by app stores).
 
 ## Non-functional requirements
 - Offline: cached tickets and bookings, queued actions that sync later

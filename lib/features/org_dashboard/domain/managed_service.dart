@@ -13,11 +13,14 @@ class ManagedService {
     required this.isActive,
     this.freeCancelHours = 24,
     this.lateRefundPct = 0,
+    this.depositPct,
     this.description,
     this.category,
     this.location,
     this.eventStartsAt,
     this.eventEndsAt,
+    this.openTime = defaultOpenTime,
+    this.closeTime = defaultCloseTime,
   });
 
   final String id;
@@ -35,6 +38,11 @@ class ManagedService {
   final bool isActive;
   final int freeCancelHours;
   final int lateRefundPct;
+  final int? depositPct;
+
+  /// Resources only: the daily booking window as "HH:MM", Africa/Nairobi.
+  final String openTime;
+  final String closeTime;
 
   factory ManagedService.fromMap(Map<String, dynamic> m) => ManagedService(
         id: m['id'] as String,
@@ -52,8 +60,17 @@ class ManagedService {
         isActive: m['is_active'] as bool,
         freeCancelHours: (m['free_cancel_hours'] as num?)?.toInt() ?? 24,
         lateRefundPct: (m['late_refund_pct'] as num?)?.toInt() ?? 0,
+        depositPct: (m['deposit_pct'] as num?)?.toInt(),
+        openTime: _hhmm(m['open_time'] as String?, defaultOpenTime),
+        closeTime: _hhmm(m['close_time'] as String?, defaultCloseTime),
       );
 }
+
+const defaultOpenTime = '08:00';
+const defaultCloseTime = '20:00';
+
+/// Postgres sends "09:00:00"; the app works with "09:00".
+String _hhmm(String? t, String fallback) => (t == null || t.length < 5) ? fallback : t.substring(0, 5);
 
 /// What the service form collects. Only the fields that apply to [mode] are written.
 class ServiceDraft {
@@ -71,6 +88,9 @@ class ServiceDraft {
     this.isActive = true,
     this.freeCancelHours = 24,
     this.lateRefundPct = 0,
+    this.depositPct,
+    this.openTime = defaultOpenTime,
+    this.closeTime = defaultCloseTime,
   });
 
   final String title;
@@ -86,6 +106,9 @@ class ServiceDraft {
   final bool isActive;
   final int freeCancelHours;
   final int lateRefundPct;
+  final int? depositPct;
+  final String openTime;
+  final String closeTime;
 
   Map<String, dynamic> toMap(String orgId) => {
         'org_id': orgId,
@@ -97,10 +120,21 @@ class ServiceDraft {
         'is_active': isActive,
         'free_cancel_hours': freeCancelHours,
         'late_refund_pct': lateRefundPct,
+        'deposit_pct': depositPct,
         if (mode == BookingMode.appointment) ...{
           'price_cents': priceCents,
           'duration_min': durationMin,
           'buffer_min': bufferMin,
+          'event_starts_at': null,
+          'event_ends_at': null,
+        },
+        // A resource is booked in slots of [durationMin] between opening and closing time.
+        if (mode == BookingMode.resource) ...{
+          'price_cents': priceCents,
+          'duration_min': durationMin,
+          'buffer_min': bufferMin,
+          'open_time': openTime,
+          'close_time': closeTime,
           'event_starts_at': null,
           'event_ends_at': null,
         },
@@ -156,6 +190,14 @@ String? validateNonNegativeInt(String? v, {int max = 1440}) {
   final n = int.tryParse((v ?? '').trim());
   if (n == null || n < 0) return 'Enter 0 or more minutes';
   return n > max ? 'Enter up to $max minutes' : null;
+}
+
+/// Opening and closing as "HH:MM". Closing must be later, and a slot must fit in the day.
+String? validateOpeningHours(String open, String close, {int slotMinutes = 60}) {
+  if (close.compareTo(open) <= 0) return 'Closing time must be after opening time';
+  int minutes(String t) => int.parse(t.substring(0, 2)) * 60 + int.parse(t.substring(3, 5));
+  if (minutes(close) - minutes(open) < slotMinutes) return 'The booking length does not fit between opening and closing';
+  return null;
 }
 
 /// An event needs a start; when given, the end must follow it. [now] is injectable for tests.

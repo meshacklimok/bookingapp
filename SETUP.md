@@ -26,6 +26,8 @@ See [supabase/README.md](supabase/README.md).
 ```
 flutter run --dart-define=SUPABASE_URL=https://<ref>.supabase.co --dart-define=SUPABASE_ANON_KEY=<anon key>
 ```
+For release builds, also pass `--dart-define=SENTRY_DSN=<dsn>` (Sentry, Project settings, Client Keys) to turn on
+crash reporting. Without it, nothing is sent.
 
 ## 5. Test
 ```

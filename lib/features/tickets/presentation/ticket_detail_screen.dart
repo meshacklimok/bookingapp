@@ -17,10 +17,11 @@ class TicketDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Ticket')),
-      body: AsyncBody<TicketInfo>(
+      body: AsyncBody<({TicketInfo ticket, bool isSavedCopy})>(
         value: ticket,
         onRetry: () => ref.invalidate(ticketProvider(ticketId)),
-        data: (t) {
+        data: (result) {
+          final t = result.ticket;
           final valid = t.status == 'valid';
           return Center(
             child: SingleChildScrollView(
@@ -41,6 +42,13 @@ class TicketDetailScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(valid ? 'Show this code at the entrance' : 'This ticket is ${t.status}'),
+                  if (result.isSavedCopy) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Offline: saved copy, so its status may be out of date.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ],
               ),
             ),

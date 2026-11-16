@@ -68,9 +68,13 @@ class _ServiceTile extends ConsumerWidget {
     final price = isEvent ? 'from ${formatKes(service.priceCents)}' : formatKes(service.priceCents);
     return Card(
       child: ListTile(
-        leading: Icon(isEvent ? Icons.confirmation_number_outlined : Icons.event_available_outlined),
+        leading: Icon(switch (service.mode) {
+          BookingMode.event => Icons.confirmation_number_outlined,
+          BookingMode.resource => Icons.meeting_room_outlined,
+          BookingMode.appointment => Icons.event_available_outlined,
+        }),
         title: Text(service.title, style: service.isActive ? null : const TextStyle(decoration: TextDecoration.lineThrough)),
-        subtitle: Text([isEvent ? 'Event' : 'Appointment', when, price, if (!service.isActive) 'inactive'].join(' · ')),
+        subtitle: Text([switch (service.mode) { BookingMode.event => 'Event', BookingMode.resource => 'Space', BookingMode.appointment => 'Appointment' }, when, price, if (!service.isActive) 'inactive'].join(' · ')),
         trailing: Switch(
           value: service.isActive,
           onChanged: (v) => _toggle(context, ref, v),

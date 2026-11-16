@@ -11,6 +11,11 @@
 3. Auth redirect: Dashboard, Authentication, URL Configuration, add `com.example.bookingapp://auth-callback`
    to Redirect URLs. Sign-up confirmation and password reset emails open the app through it.
    If you change the app id, update it in `lib/core/config/env.dart`, `AndroidManifest.xml` and `Info.plist` too.
+   For Flutter Web, also add the web app's URL with a wildcard (e.g. `http://localhost:3000/**`).
+   "Continue with Google": in Google Cloud Console create an OAuth client (type Web application) with
+   `https://<ref>.supabase.co/auth/v1/callback` as an authorized redirect URI, then paste its client id and
+   secret into Dashboard, Authentication, Sign In / Providers, Google. The app opens Google in the browser and
+   returns through the same redirect URL, so no Android or iOS client ids are needed.
 4. Optional demo data: run `supabase/seed.sql` in the SQL editor.
 5. Edge Function secrets:
    ```
@@ -19,11 +24,24 @@
    supabase functions deploy create-payment
    supabase functions deploy mpesa-callback
    supabase functions deploy paystack-webhook
+   supabase functions deploy mpesa-reconcile
+   supabase functions deploy send-push
+   supabase functions deploy send-sms
    supabase functions deploy process-refund
    ```
 6. Point the provider callbacks at your functions:
    - Paystack dashboard, Webhook URL: `https://<ref>.supabase.co/functions/v1/paystack-webhook`
    - M-Pesa: the callback URL is built automatically by `create-payment`.
+7. Backup for lost M-Pesa callbacks: enable `pg_net` too, then store the project URL and `CRON_SECRET` in Vault
+   (the commands are at the top of `migrations/..._mpesa_reconcile_cron.sql`). pg_cron then calls `mpesa-reconcile`
+   every minute, which asks Daraja about payments still pending after 2 minutes.
+8. Push notifications: create a Firebase project, put its service-account JSON key in `FCM_SERVICE_ACCOUNT`, and
+   deploy `send-push`. The same Vault secrets let pg_cron call it every minute. It sends each new notification to the
+   user's devices. The app registers a device with `rpc('register_device_token', {p_token, p_platform})` once it has
+   an FCM token (the Flutter side still needs `firebase_messaging` and the Firebase config files).
+9. SMS: create an Africa's Talking account, set `AT_USERNAME` (`sandbox` to try it), `AT_API_KEY` and optionally
+   `AT_SENDER_ID`, and deploy `send-sms`. pg_cron calls it every minute with the same Vault secrets. It texts booking
+   confirmations and reminders to customers with a phone number on their profile (`profiles.sms_enabled` is the opt-out).
 
 ## Make yourself platform admin
 After signing up in the app, run in the SQL editor:

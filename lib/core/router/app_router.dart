@@ -16,6 +16,8 @@ import '../../features/admin/presentation/admin_screen.dart';
 import '../../features/notifications/presentation/notifications_screen.dart';
 import '../../features/org_dashboard/presentation/earnings_screen.dart';
 import '../../features/org_dashboard/presentation/payouts_screen.dart';
+import '../../features/org_dashboard/presentation/promo_codes_screen.dart';
+import '../../features/org_dashboard/presentation/walk_in_booking_screen.dart';
 import '../../features/org_dashboard/presentation/org_dashboard_screen.dart';
 import '../../features/org_dashboard/presentation/register_org_screen.dart';
 import '../../features/org_dashboard/presentation/service_form_screen.dart';
@@ -106,6 +108,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => BookingScreen(serviceId: state.pathParameters['id']!),
       ),
       GoRoute(
+        path: '/reschedule/:bookingId',
+        builder: (context, state) => RescheduleScreen(
+          bookingId: state.pathParameters['bookingId']!,
+          serviceId: state.uri.queryParameters['service'] ?? '',
+        ),
+      ),
+      GoRoute(
         path: '/checkout/:bookingId',
         builder: (context, state) => CheckoutScreen(bookingId: state.pathParameters['bookingId']!),
       ),
@@ -139,6 +148,14 @@ final routerProvider = Provider<GoRouter>((ref) {
                 ),
               ),
             ],
+          ),
+          GoRoute(
+            path: 'walk-in',
+            builder: (context, state) => WalkInBookingScreen(orgId: state.pathParameters['orgId']!),
+          ),
+          GoRoute(
+            path: 'promos',
+            builder: (context, state) => PromoCodesScreen(orgId: state.pathParameters['orgId']!),
           ),
           GoRoute(
             path: 'payouts',

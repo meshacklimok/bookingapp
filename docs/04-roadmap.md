@@ -36,6 +36,6 @@
 - [ ] Safaricom Daraja sandbox account and credentials
 - [ ] Paystack account (test keys)
 - [ ] Firebase project (FCM only)
-- [ ] Africa's Talking account (SMS, later)
+- [ ] Africa's Talking account (SMS)
 - [ ] Sentry project
 - [ ] Git repository initialised

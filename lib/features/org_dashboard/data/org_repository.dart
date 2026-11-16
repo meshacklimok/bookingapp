@@ -9,6 +9,7 @@ import '../domain/earnings.dart';
 import '../domain/managed_service.dart';
 import '../domain/organization.dart';
 import '../domain/payouts.dart';
+import '../domain/promo.dart';
 import '../domain/staff.dart';
 import '../../../core/utils/formatters.dart';
 
@@ -37,9 +38,15 @@ class OrgBooking {
     required this.status,
     required this.totalCents,
     required this.earningsCents,
+    this.balanceCents = 0,
+    this.balancePaid = false,
+    this.isWalkIn = false,
   });
 
   final String id;
+
+  /// Booked by a member of the organization for someone without an account, and paid at the venue.
+  final bool isWalkIn;
   final String? serviceTitle;
   final String? customerName;
   final DateTime startsAt;
@@ -47,14 +54,22 @@ class OrgBooking {
   final int totalCents;
   final int? earningsCents;
 
+  /// Still owed at the venue after the customer paid a deposit online ([totalCents] is the online part).
+  final int balanceCents;
+  final bool balancePaid;
+  bool get balanceDue => balanceCents > 0 && !balancePaid;
+
   factory OrgBooking.fromMap(Map<String, dynamic> m) => OrgBooking(
         id: m['id'] as String,
         serviceTitle: (m['services'] as Map<String, dynamic>?)?['title'] as String?,
-        customerName: (m['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+        customerName: (m['profiles'] as Map<String, dynamic>?)?['full_name'] as String? ?? m['guest_name'] as String?,
+        isWalkIn: m['guest_name'] != null,
         startsAt: DateTime.parse(m['starts_at'] as String),
         status: m['status'] as String,
         totalCents: (m['total_cents'] as num).toInt(),
         earningsCents: (m['org_earnings_cents'] as num?)?.toInt(),
+        balanceCents: (m['balance_cents'] as num?)?.toInt() ?? 0,
+        balancePaid: m['balance_paid_at'] != null,
       );
 }
 
@@ -146,6 +161,16 @@ class OrgRepository {
     await _client.from('services').update(values).eq('id', serviceId).select('id').single();
     return serviceId;
   }
+
+  Future<List<PromoCode>> promoCodes(String orgId) async {
+    final rows = await _client.rpc('org_promo_codes', params: {'p_org_id': orgId}) as List<dynamic>;
+    return rows.map((r) => PromoCode.fromMap(r as Map<String, dynamic>)).toList();
+  }
+
+  Future<void> createPromo(String orgId, PromoDraft draft) => _client.from('promo_codes').insert(draft.toMap(orgId));
+
+  Future<void> setPromoActive(String id, bool active) =>
+      _client.from('promo_codes').update({'is_active': active}).eq('id', id).select('id').single();
 
   /// Services are deactivated rather than deleted because bookings reference them.
   Future<void> setServiceActive(String serviceId, bool active) =>
@@ -246,7 +271,7 @@ class OrgRepository {
   Future<List<OrgBooking>> bookings(String orgId) async {
     final rows = await _client
         .from('bookings')
-        .select('id, starts_at, status, total_cents, org_earnings_cents, services(title), profiles(full_name)')
+        .select('id, starts_at, status, total_cents, org_earnings_cents, balance_cents, balance_paid_at, guest_name, services(title), profiles(full_name)')
         .eq('org_id', orgId)
         .neq('status', 'held')
         .order('starts_at', ascending: false)
@@ -275,6 +300,41 @@ class OrgRepository {
     final rows = await _client.from('payouts').select().eq('org_id', orgId).order('created_at', ascending: false);
     return rows.map(Payout.fromMap).toList();
   }
+
+  /// Members of [serviceId]'s staff, for choosing who a walk-in is booked with.
+  Future<List<OrgStaff>> serviceStaff(String serviceId) async {
+    final rows = await _client.from('staff_services').select('staff_id, profiles(full_name)').eq('service_id', serviceId);
+    return [for (final r in rows) OrgStaff.fromMap({...r, 'user_id': r['staff_id'], 'role': 'staff'})];
+  }
+
+  /// Books someone who has no account. The money is taken at the venue, so nothing is charged through the app.
+  Future<void> createWalkIn({
+    required String serviceId,
+    required String guestName,
+    String? guestPhone,
+    DateTime? startsAt,
+    String? staffId,
+    String? tierId,
+    int quantity = 1,
+    int? totalCents,
+    String paymentMethod = 'cash',
+    String? notes,
+  }) =>
+      _client.rpc('create_walk_in_booking', params: {
+        'p_service_id': serviceId,
+        'p_guest_name': guestName,
+        'p_guest_phone': guestPhone,
+        'p_starts_at': startsAt?.toUtc().toIso8601String(),
+        'p_staff_id': staffId,
+        'p_tier_id': tierId,
+        'p_quantity': quantity,
+        'p_total_cents': totalCents,
+        'p_payment_method': paymentMethod,
+        'p_notes': notes,
+      });
+
+  /// The customer paid what they owed at the venue after their online deposit.
+  Future<void> markBalancePaid(String bookingId) => _client.rpc('mark_balance_paid', params: {'p_booking_id': bookingId});
 
   Future<void> setOutcome(String bookingId, String status) =>
       _client.rpc('set_booking_outcome', params: {'p_booking_id': bookingId, 'p_status': status});
@@ -310,6 +370,10 @@ final staffScheduleProvider = FutureProvider.autoDispose.family<StaffSchedule, (
   (ref, key) => ref.watch(orgRepositoryProvider).schedule(key.$1, key.$2),
 );
 
+final serviceStaffProvider = FutureProvider.autoDispose.family<List<OrgStaff>, String>(
+  (ref, serviceId) => ref.watch(orgRepositoryProvider).serviceStaff(serviceId),
+);
+
 final orgBookingsProvider = FutureProvider.autoDispose.family<List<OrgBooking>, String>(
   (ref, orgId) => ref.watch(orgRepositoryProvider).bookings(orgId),
 );
@@ -328,4 +392,8 @@ final orgBalanceProvider = FutureProvider.autoDispose.family<OrgBalance, String>
 
 final orgPayoutsProvider = FutureProvider.autoDispose.family<List<Payout>, String>(
   (ref, orgId) => ref.watch(orgRepositoryProvider).payouts(orgId),
+);
+
+final orgPromoCodesProvider = FutureProvider.autoDispose.family<List<PromoCode>, String>(
+  (ref, orgId) => ref.watch(orgRepositoryProvider).promoCodes(orgId),
 );

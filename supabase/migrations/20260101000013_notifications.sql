@@ -1,6 +1,6 @@
 -- Notification inbox: booking confirmations and reminders ---------------------------------------------------------------
 -- Rows are created by the database (triggers and cron functions), never by the app. `data.route` is an in-app path the
--- inbox opens on tap. Push delivery would read the same rows (device_tokens); it is not wired up yet.
+-- inbox opens on tap. Push delivery reads the same rows (see ..._push_delivery.sql).
 
 -- one row per (user, event): reminders and confirmations can run twice without duplicating
 alter table public.notifications add column dedupe_key text;

@@ -15,10 +15,11 @@ class TicketsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('My tickets')),
-      body: AsyncBody<List<TicketInfo>>(
+      body: AsyncBody<TicketWallet>(
         value: tickets,
         onRetry: () => ref.invalidate(myTicketsProvider),
-        data: (items) {
+        data: (wallet) {
+          final items = wallet.tickets;
           if (items.isEmpty) {
             return const EmptyState(icon: Icons.confirmation_number_outlined, message: 'Your tickets will appear here.');
           }
@@ -26,8 +27,12 @@ class TicketsScreen extends ConsumerWidget {
             onRefresh: () async => ref.invalidate(myTicketsProvider),
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: items.length,
+              itemCount: items.length + (wallet.isSavedCopy ? 1 : 0),
               itemBuilder: (context, i) {
+                if (wallet.isSavedCopy) {
+                  if (i == 0) return _SavedCopyNotice(savedAt: wallet.savedAt!);
+                  i--;
+                }
                 final t = items[i];
                 return Card(
                   child: ListTile(
@@ -46,6 +51,24 @@ class TicketsScreen extends ConsumerWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _SavedCopyNotice extends StatelessWidget {
+  const _SavedCopyNotice({required this.savedAt});
+
+  final DateTime savedAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: ListTile(
+        leading: const Icon(Icons.cloud_off),
+        title: const Text('You are offline'),
+        subtitle: Text('Showing tickets saved ${formatDateTime(savedAt.toLocal())}. Pull down to refresh.'),
       ),
     );
   }

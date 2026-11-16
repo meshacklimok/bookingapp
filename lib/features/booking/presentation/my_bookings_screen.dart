@@ -5,10 +5,13 @@ import 'package:go_router/go_router.dart';
 import '../../../core/utils/errors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/async_body.dart';
+import '../../discover/data/service_repository.dart';
 import '../data/booking_repository.dart';
 import '../domain/booking.dart';
 import '../domain/cancellation.dart';
+import '../../../shared/widgets/star_rating.dart';
 import 'cancel_booking_dialog.dart';
+import 'review_dialog.dart';
 
 class MyBookingsScreen extends ConsumerWidget {
   const MyBookingsScreen({super.key});
@@ -76,17 +79,59 @@ class _BookingCard extends ConsumerWidget {
               ],
             ),
             Text(formatDateTime(booking.startsAt)),
-            Text(formatKes(booking.totalCents)),
+            Text(
+              booking.discountCents > 0
+                  ? '${formatKes(booking.totalCents)} (saved ${formatKes(booking.discountCents)})'
+                  : formatKes(booking.totalCents),
+            ),
+            if (booking.balanceCents > 0 && booking.status != 'cancelled')
+              Text(
+                booking.balancePaid
+                    ? 'Balance of ${formatKes(booking.balanceCents)} paid at the venue'
+                    : 'Balance of ${formatKes(booking.balanceCents)} due at the venue',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             if (booking.status == 'cancelled' && booking.refundState != null)
               Text(
                 '${booking.refundState!.label}: ${formatKes(booking.refundCents)}',
                 style: Theme.of(context).textTheme.bodySmall,
+              ),
+            if (booking.canReview)
+              Row(
+                children: [
+                  if (booking.reviewRating != null) ...[
+                    StarRating(rating: booking.reviewRating!),
+                    const SizedBox(width: 8),
+                  ],
+                  TextButton(
+                    onPressed: () async {
+                      final done = await showReviewDialog(
+                        context,
+                        ref,
+                        bookingId: booking.id,
+                        title: booking.serviceTitle ?? 'this booking',
+                        currentRating: booking.reviewRating,
+                      );
+                      if (done) {
+                        ref.invalidate(myBookingsProvider);
+                        ref.invalidate(reviewsProvider(booking.serviceId));
+                        ref.invalidate(serviceProvider(booking.serviceId));
+                      }
+                    },
+                    child: Text(booking.reviewRating == null ? 'Leave a review' : 'Edit review'),
+                  ),
+                ],
               ),
             if (booking.canCancelPaid) ...[
               Text(
                 cancellationPolicyText(booking.freeCancelHours, booking.lateRefundPct),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (booking.canReschedule(DateTime.now()))
+                TextButton(
+                  onPressed: () => context.push('/reschedule/${booking.id}?service=${booking.serviceId}'),
+                  child: const Text('Reschedule'),
+                ),
               TextButton(
                 onPressed: () async {
                   final done = await confirmCancelBooking(context, ref, bookingId: booking.id, title: booking.serviceTitle ?? 'this booking');

@@ -92,7 +92,12 @@ class _Verdict {
     switch (r['result']) {
       case 'ok':
         final holder = r['holder'] as String?;
-        return _Verdict(ok: true, title: 'Valid ticket', detail: [service, if (holder != null) holder].join('\n'));
+        final due = (r['balance_due_cents'] as num?)?.toInt() ?? 0;
+        return _Verdict(
+          ok: true,
+          title: 'Valid ticket',
+          detail: [service, if (holder != null) holder, if (due > 0) 'Collect ${formatKes(due)} balance'].join('\n'),
+        );
       case 'already_used':
         final at = r['checked_in_at'] as String?;
         return _Verdict(

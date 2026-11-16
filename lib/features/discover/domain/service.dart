@@ -22,6 +22,9 @@ class Service {
     required this.eventStartsAt,
     this.freeCancelHours = 24,
     this.lateRefundPct = 0,
+    this.depositPct,
+    this.ratingAvg,
+    this.ratingCount = 0,
   });
 
   final String id;
@@ -38,6 +41,11 @@ class Service {
   final int freeCancelHours;
   final int lateRefundPct;
 
+  /// Percent of the price the customer can pay online to book; the rest is paid at the venue. Null: pay in full.
+  final int? depositPct;
+  final double? ratingAvg;
+  final int ratingCount;
+
   factory Service.fromMap(Map<String, dynamic> m) => Service(
         id: m['id'] as String,
         orgId: m['org_id'] as String,
@@ -52,6 +60,26 @@ class Service {
         eventStartsAt: m['event_starts_at'] == null ? null : DateTime.parse(m['event_starts_at'] as String),
         freeCancelHours: (m['free_cancel_hours'] as num?)?.toInt() ?? 24,
         lateRefundPct: (m['late_refund_pct'] as num?)?.toInt() ?? 0,
+        depositPct: (m['deposit_pct'] as num?)?.toInt(),
+        ratingAvg: (m['rating_avg'] as num?)?.toDouble(),
+        ratingCount: (m['rating_count'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// What other customers said: a star rating, an optional comment and the reviewer's first name.
+class Review {
+  const Review({required this.rating, required this.comment, required this.createdAt, required this.reviewer});
+
+  final int rating;
+  final String? comment;
+  final DateTime createdAt;
+  final String reviewer;
+
+  factory Review.fromMap(Map<String, dynamic> m) => Review(
+        rating: (m['rating'] as num).toInt(),
+        comment: m['comment'] as String?,
+        createdAt: DateTime.parse(m['created_at'] as String),
+        reviewer: m['reviewer'] as String? ?? 'Customer',
       );
 }
 

@@ -127,7 +127,8 @@ class _ServiceCard extends StatelessWidget {
     final subtitle = [
       if (service.orgName != null) service.orgName!,
       if (service.mode == BookingMode.event && service.eventStartsAt != null) formatDateTime(service.eventStartsAt!),
-      if (service.mode == BookingMode.appointment) '${service.durationMin} min',
+      if (service.mode != BookingMode.event) '${service.durationMin} min',
+      if (service.ratingCount > 0) '★ ${service.ratingAvg!.toStringAsFixed(1)} (${service.ratingCount})',
     ].join(' · ');
 
     return Card(

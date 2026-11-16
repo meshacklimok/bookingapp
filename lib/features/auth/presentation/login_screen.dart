@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -62,6 +63,29 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (mounted) setState(() => _message = e.message);
     } catch (_) {
       if (mounted) setState(() => _message = 'Something went wrong. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Opens Google in the browser; the session arrives through the auth deep link (or the web page reload),
+  /// and the router redirect then leaves /login on its own.
+  Future<void> _google() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+      _messageIsError = true;
+    });
+    try {
+      await ref.read(supabaseProvider).auth.signInWithOAuth(
+            OAuthProvider.google,
+            // On web, come back to this page so the `from` parameter survives the round trip.
+            redirectTo: kIsWeb ? Uri.base.toString() : Env.authRedirectUrl,
+          );
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _message = e.message);
+    } catch (_) {
+      if (mounted) setState(() => _message = 'Could not open Google sign-in. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -173,6 +197,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
                         : Text(_signUp ? 'Sign up' : 'Sign in'),
                   ),
+                  const SizedBox(height: 12),
+                  const Row(
+                    children: [
+                      Expanded(child: Divider()),
+                      Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('or')),
+                      Expanded(child: Divider()),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _google,
+                    icon: const Icon(Icons.g_mobiledata, size: 28),
+                    label: const Text('Continue with Google'),
+                  ),
+                  const SizedBox(height: 8),
                   TextButton(
                     onPressed: _busy ? null : () => setState(() => _signUp = !_signUp),
                     child: Text(_signUp ? 'I already have an account' : 'Create an account'),

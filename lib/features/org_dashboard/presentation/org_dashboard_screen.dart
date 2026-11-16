@@ -35,12 +35,24 @@ class OrgDashboardScreen extends ConsumerWidget {
               padding: const EdgeInsets.all(16),
               children: [
                 if (org != null) OrgStatusBanner(status: org.status),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.person_add_alt_outlined),
+                    title: const Text('Add a booking'),
+                    subtitle: const Text('Walk-ins and phone bookings, paid at the venue'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      final added = await context.push<bool>('/org/$orgId/walk-in');
+                      if (added == true) ref.invalidate(orgBookingsProvider(orgId));
+                    },
+                  ),
+                ),
                 if (canManage)
                   Card(
                     child: ListTile(
                       leading: const Icon(Icons.design_services_outlined),
                       title: const Text('Services'),
-                      subtitle: const Text('Appointments and events'),
+                      subtitle: const Text('Appointments, events and spaces'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push('/org/$orgId/services'),
                     ),
@@ -53,6 +65,16 @@ class OrgDashboardScreen extends ConsumerWidget {
                       subtitle: const Text('Who takes appointments, and when'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push('/org/$orgId/staff'),
+                    ),
+                  ),
+                if (canManage)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.sell_outlined),
+                      title: const Text('Promo codes'),
+                      subtitle: const Text('Discounts customers enter at checkout'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push('/org/$orgId/promos'),
                     ),
                   ),
                 if (canManage) _EarningsCard(orgId: orgId),
@@ -134,7 +156,12 @@ class _OrgBookingTile extends ConsumerWidget {
 
   Future<void> _mark(BuildContext context, WidgetRef ref, String status) async {
     try {
-      await ref.read(orgRepositoryProvider).setOutcome(booking.id, status);
+      final repo = ref.read(orgRepositoryProvider);
+      if (status == 'balance') {
+        await repo.markBalancePaid(booking.id);
+      } else {
+        await repo.setOutcome(booking.id, status);
+      }
       ref.invalidate(orgBookingsProvider(orgId));
     } catch (e) {
       if (context.mounted) {
@@ -152,6 +179,8 @@ class _OrgBookingTile extends ConsumerWidget {
           if (booking.customerName != null) booking.customerName!,
           formatDateTime(booking.startsAt),
           booking.status.replaceAll('_', ' '),
+          if (booking.isWalkIn) 'walk-in',
+          if (booking.balanceDue && booking.status != 'cancelled') '${formatKes(booking.balanceCents)} due at venue',
         ].join(' · ')),
         trailing: Text(formatKes(booking.totalCents)),
         onLongPress: booking.status == 'confirmed'
@@ -161,6 +190,15 @@ class _OrgBookingTile extends ConsumerWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (booking.balanceDue)
+                          ListTile(
+                            leading: const Icon(Icons.payments_outlined),
+                            title: Text('Balance ${formatKes(booking.balanceCents)} collected'),
+                            onTap: () {
+                              Navigator.pop(sheet);
+                              _mark(context, ref, 'balance');
+                            },
+                          ),
                         ListTile(
                           leading: const Icon(Icons.check),
                           title: const Text('Mark completed'),

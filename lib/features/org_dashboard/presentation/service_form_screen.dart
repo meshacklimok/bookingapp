@@ -6,6 +6,7 @@ import '../../../core/utils/errors.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/async_body.dart';
 import '../../booking/domain/cancellation.dart';
+import '../../booking/domain/deposit.dart';
 import '../../discover/domain/service.dart';
 import '../data/org_repository.dart';
 import '../domain/managed_service.dart';
@@ -87,8 +88,11 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
   late bool _active = _existing?.isActive ?? true;
   late int _freeCancelHours = _existing?.freeCancelHours ?? 24;
   late int _lateRefundPct = _existing?.lateRefundPct ?? 0;
+  late int? _depositPct = _existing?.depositPct;
   late DateTime? _starts = _existing?.eventStartsAt?.toLocal();
   late DateTime? _ends = _existing?.eventEndsAt?.toLocal();
+  late String _openTime = _existing?.openTime ?? defaultOpenTime;
+  late String _closeTime = _existing?.closeTime ?? defaultCloseTime;
   late final List<_TierFields> _tiers = [
     for (final t in widget.tiers)
       _TierFields(id: t.id, sold: t.sold, name: t.name, price: _plainKes(t.priceCents), quantity: '${t.quantity}'),
@@ -132,9 +136,24 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
     return DateTime(date.year, date.month, date.day, time.hour, time.minute);
   }
 
+  Future<String?> _pickTime(String current) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: int.parse(current.substring(0, 2)), minute: int.parse(current.substring(3, 5))),
+    );
+    if (picked == null) return null;
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(picked.hour)}:${two(picked.minute)}';
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     final isEvent = _mode == BookingMode.event;
+
+    if (_mode == BookingMode.resource) {
+      final hoursError = validateOpeningHours(_openTime, _closeTime, slotMinutes: int.tryParse(_duration.text.trim()) ?? 60);
+      if (hoursError != null) return setState(() => _message = hoursError);
+    }
 
     List<TierDraft> tierDrafts = const [];
     if (isEvent) {
@@ -171,6 +190,9 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
         isActive: _active,
         freeCancelHours: _freeCancelHours,
         lateRefundPct: _lateRefundPct,
+        depositPct: isEvent ? null : _depositPct,
+        openTime: _openTime,
+        closeTime: _closeTime,
       );
       _savedId = await repo.saveService(widget.orgId, draft, serviceId: _savedId);
       if (isEvent) {
@@ -200,6 +222,7 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
             segments: const [
               ButtonSegment(value: BookingMode.appointment, label: Text('Appointment'), icon: Icon(Icons.event_available_outlined)),
               ButtonSegment(value: BookingMode.event, label: Text('Event'), icon: Icon(Icons.confirmation_number_outlined)),
+              ButtonSegment(value: BookingMode.resource, label: Text('Space'), icon: Icon(Icons.meeting_room_outlined)),
             ],
             selected: {_mode},
             // Switching type after people booked would corrupt those bookings; the database refuses it too.
@@ -241,7 +264,10 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
           if (!isEvent) ...[
             TextFormField(
               controller: _price,
-              decoration: const InputDecoration(labelText: 'Price', prefixText: 'KES '),
+              decoration: InputDecoration(
+                labelText: _mode == BookingMode.resource ? 'Price per booking' : 'Price',
+                prefixText: 'KES ',
+              ),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               validator: validatePrice,
             ),
@@ -268,10 +294,32 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              'Customers can pick a time once a staff member is linked to this service and has weekly hours (Staff and hours).',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+            if (_mode == BookingMode.resource) ...[
+              _TimeTile(
+                label: 'Opens',
+                value: _openTime,
+                onPick: () async {
+                  final v = await _pickTime(_openTime);
+                  if (v != null) setState(() => _openTime = v);
+                },
+              ),
+              _TimeTile(
+                label: 'Closes',
+                value: _closeTime,
+                onPick: () async {
+                  final v = await _pickTime(_closeTime);
+                  if (v != null) setState(() => _closeTime = v);
+                },
+              ),
+              Text(
+                'Customers book one slot of the length above, every day between opening and closing. Each slot can be booked by one customer at a time.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ] else
+              Text(
+                'Customers can pick a time once a staff member is linked to this service and has weekly hours (Staff and hours).',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
           ],
           if (isEvent) ...[
             _DateTimeTile(
@@ -302,6 +350,28 @@ class _ServiceFormState extends ConsumerState<_ServiceForm> {
                 icon: const Icon(Icons.add),
                 label: const Text('Add ticket type'),
               ),
+            ),
+          ],
+          if (!isEvent) ...[
+            const Divider(height: 32),
+            Text('Deposit', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<int?>(
+              initialValue: _depositPct,
+              decoration: const InputDecoration(labelText: 'Customers can book with a deposit of'),
+              items: [
+                const DropdownMenuItem<int?>(value: null, child: Text('No deposit (pay in full)')),
+                for (final p in {...depositOptions, if (_depositPct != null) _depositPct!}.toList()..sort()) DropdownMenuItem<int?>(value: p, child: Text('$p%')),
+              ],
+              onChanged: (v) => setState(() => _depositPct = v),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _depositPct == null
+                  ? 'Customers pay the full price online.'
+                  : 'Customers may pay $_depositPct% online and the rest to you at the venue. The platform fee is taken on the '
+                      'online payment only, and cancellations refund the deposit by your cancellation policy.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
           const Divider(height: 32),
@@ -431,6 +501,25 @@ class _DateTimeTile extends StatelessWidget {
       title: Text(label),
       subtitle: Text(value == null ? 'Not set' : formatDateTime(value!)),
       trailing: onClear == null ? null : IconButton(icon: const Icon(Icons.clear), onPressed: onClear),
+      onTap: onPick,
+    );
+  }
+}
+
+class _TimeTile extends StatelessWidget {
+  const _TimeTile({required this.label, required this.value, required this.onPick});
+
+  final String label;
+  final String value;
+  final VoidCallback onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.access_time),
+      title: Text(label),
+      trailing: Text(value, style: Theme.of(context).textTheme.titleMedium),
       onTap: onPick,
     );
   }

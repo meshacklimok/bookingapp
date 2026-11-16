@@ -25,8 +25,8 @@ class BookingScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(serviceProvider(serviceId)),
         data: (s) => switch (s.mode) {
           BookingMode.appointment => _SlotPicker(service: s),
+          BookingMode.resource => _SlotPicker(service: s, resource: true),
           BookingMode.event => _TierPicker(service: s),
-          BookingMode.resource => const EmptyState(icon: Icons.construction, message: 'Coming soon.'),
         },
       ),
     );
@@ -37,10 +37,48 @@ void _showError(BuildContext context, Object error) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(error))));
 }
 
+/// Picks a new time for a paid booking. Same calendar as booking, but choosing a slot moves the booking.
+class RescheduleScreen extends ConsumerWidget {
+  const RescheduleScreen({super.key, required this.bookingId, required this.serviceId});
+
+  final String bookingId;
+  final String serviceId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final service = ref.watch(serviceProvider(serviceId));
+    return Scaffold(
+      appBar: AppBar(title: const Text('Choose a new time')),
+      body: AsyncBody<Service>(
+        value: service,
+        onRetry: () => ref.invalidate(serviceProvider(serviceId)),
+        data: (s) => _SlotPicker(
+          service: s,
+          resource: s.mode == BookingMode.resource,
+          onPick: (slot) async {
+            await ref.read(bookingRepositoryProvider).reschedule(bookingId, slot);
+            ref.invalidate(myBookingsProvider);
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Moved to ${formatDateTime(slot.start)}.')));
+              context.pop();
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class _SlotPicker extends ConsumerStatefulWidget {
-  const _SlotPicker({required this.service});
+  const _SlotPicker({required this.service, this.resource = false, this.onPick});
 
   final Service service;
+
+  /// Replaces the default "hold the slot and go to checkout" when the slot is for something else (rescheduling).
+  final Future<void> Function(Slot slot)? onPick;
+
+  /// A room or court: one shared calendar, no choice of staff.
+  final bool resource;
 
   @override
   ConsumerState<_SlotPicker> createState() => _SlotPickerState();
@@ -49,6 +87,8 @@ class _SlotPicker extends ConsumerStatefulWidget {
 class _SlotPickerState extends ConsumerState<_SlotPicker> {
   late final List<DateTime> _days;
   late DateTime _selected;
+  // null means anyone free at that time
+  String? _staffId;
   bool _busy = false;
 
   @override
@@ -62,8 +102,12 @@ class _SlotPickerState extends ConsumerState<_SlotPicker> {
   Future<void> _hold(Slot slot) async {
     setState(() => _busy = true);
     try {
-      final id = await ref.read(bookingRepositoryProvider).holdAppointment(serviceId: widget.service.id, slot: slot);
-      if (mounted) context.push('/checkout/$id');
+      if (widget.onPick != null) {
+        await widget.onPick!(slot);
+      } else {
+        final id = await ref.read(bookingRepositoryProvider).holdAppointment(serviceId: widget.service.id, slot: slot);
+        if (mounted) context.push('/checkout/$id');
+      }
     } catch (e) {
       if (mounted) {
         _showError(context, e);
@@ -76,10 +120,31 @@ class _SlotPickerState extends ConsumerState<_SlotPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final slots = ref.watch(slotsProvider((serviceId: widget.service.id, date: _selected)));
+    final slots = ref.watch(slotsProvider((serviceId: widget.service.id, date: _selected, staffId: _staffId, resource: widget.resource)));
+    // Choosing only makes sense with more than one person; a failed load just leaves "anyone".
+    final staff = widget.resource ? const <StaffMember>[] : ref.watch(staffProvider(widget.service.id)).valueOrNull ?? const [];
 
     return Column(
       children: [
+        if (staff.length > 1)
+          SizedBox(
+            height: 56,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              children: [
+                for (final (id, name) in [(null, 'Anyone'), for (final m in staff) (m.id, m.name)])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: ChoiceChip(
+                      label: Text(name),
+                      selected: _staffId == id,
+                      onSelected: (_) => setState(() => _staffId = id),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         SizedBox(
           height: 72,
           child: ListView.builder(

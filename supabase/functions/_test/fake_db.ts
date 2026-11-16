@@ -3,7 +3,9 @@
 // deno-lint-ignore no-explicit-any
 type Row = any;
 
-export function fakeDb(opts: { payment?: Row; refunds?: Row[]; rpcErrors?: Record<string, unknown> } = {}) {
+export function fakeDb(
+  opts: { payment?: Row; payments?: Row[]; refunds?: Row[]; rpcErrors?: Record<string, unknown> } = {},
+) {
   const rpcCalls: { name: string; args: Row }[] = [];
   const updates: { table: string; values: Row }[] = [];
   const db = {
@@ -12,10 +14,16 @@ export function fakeDb(opts: { payment?: Row; refunds?: Row[]; rpcErrors?: Recor
       const q: any = {
         select: () => q,
         eq: () => q,
+        not: () => q,
+        lt: () => q,
+        gt: () => q,
+        order: () => q,
+        limit: () => q,
         maybeSingle: () => Promise.resolve({ data: table === 'payments' ? opts.payment ?? null : null }),
-        // `await query` without maybeSingle(), as the refund lookup does
+        // `await query` without maybeSingle(), as the refund and pending-payment lookups do
         // deno-lint-ignore no-explicit-any
-        then: (resolve: any) => resolve({ data: table === 'refunds' ? opts.refunds ?? [] : [] }),
+        then: (resolve: any) =>
+          resolve({ data: table === 'refunds' ? opts.refunds ?? [] : table === 'payments' ? opts.payments ?? [] : [] }),
         update: (values: Row) => {
           updates.push({ table, values });
           return { eq: () => Promise.resolve({ error: null }) };
