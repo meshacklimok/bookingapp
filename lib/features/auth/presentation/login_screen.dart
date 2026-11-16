@@ -47,7 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           email: _email.text.trim(),
           password: _password.text,
           data: {'full_name': _name.text.trim()},
-          emailRedirectTo: Env.authRedirectUrl,
+          emailRedirectTo: kIsWeb ? Uri.base.origin : Env.authRedirectUrl,
         );
         // With email confirmation enabled there is no session until the link is opened.
         if (res.session == null && mounted) {
@@ -104,7 +104,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await ref.read(supabaseProvider).auth.resetPasswordForEmail(
             _email.text.trim(),
-            redirectTo: Env.authRedirectUrl,
+            redirectTo: kIsWeb ? Uri.base.origin : Env.authRedirectUrl,
           );
       if (!mounted) return;
       // Same message whether or not the account exists, so emails can't be probed.
